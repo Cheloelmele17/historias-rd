@@ -8,7 +8,6 @@ on:
   workflow_dispatch:
 permissions:
   contents: write
-  models: read
 concurrency: video
 jobs:
   video:
@@ -25,7 +24,7 @@ jobs:
           curl -sSL -o fuentes/Poppins-ExtraBold.ttf https://github.com/google/fonts/raw/main/ofl/poppins/Poppins-ExtraBold.ttf
       - name: Hacer el video
         env:
-          GITHUB_TOKEN: ${{ github.token }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           USUARIO_TIKTOK: ${{ vars.USUARIO_TIKTOK }}
         run: python3 hacer_video.py
       - name: Dejar el video en "Último video"
