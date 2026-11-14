@@ -1,2 +1,2 @@
 # Registro de datos publicados (lo llena el robot): fecha, número, categoría y título
-2026-11-14 | #001 | LUGARES DEL MUNDO | Desierto de Atacama
+2026-11-14 | #001 | LUGARES DEL MUNDO | Desierto de Atacama | M
