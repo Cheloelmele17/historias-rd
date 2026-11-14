@@ -1,0 +1,44 @@
+# Dato diario: un video de curiosidades cada mañana, estilo menta y noche.
+# Repo público: GitHub Actions no gasta minutos del plan.
+# Último video: https://github.com/Cheloelmele17/historias-rd/releases/tag/ultimo
+name: Video diario
+on:
+  schedule:
+    - cron: "37 9 * * *"   # 5:37 AM RD
+  workflow_dispatch:
+permissions:
+  contents: write
+  models: read
+concurrency: video
+jobs:
+  video:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Instalar ffmpeg, voz y letra
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ffmpeg > /dev/null
+          pip install -q --break-system-packages edge-tts pillow || pip install -q edge-tts pillow
+          mkdir -p fuentes
+          curl -sSL -o fuentes/Poppins-ExtraBold.ttf https://github.com/google/fonts/raw/main/ofl/poppins/Poppins-ExtraBold.ttf
+      - name: Hacer el video
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          USUARIO_TIKTOK: ${{ vars.USUARIO_TIKTOK }}
+        run: python3 hacer_video.py
+      - name: Dejar el video en "Último video"
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete ultimo -y --cleanup-tag || true
+          gh release create ultimo salida/video.mp4 salida/portada.jpg salida/descripcion.txt salida/guion.txt \
+            --title "$(head -1 salida/descripcion.txt)" --notes-file salida/descripcion.txt --latest
+      - name: Anotar el dato publicado
+        run: |
+          git config user.name "robot-dato"
+          git config user.email "robot-dato@users.noreply.github.com"
+          git add registro.txt
+          git commit -m "Dato del $(date -u +%Y-%m-%d)" || echo "sin cambios"
+          git push
