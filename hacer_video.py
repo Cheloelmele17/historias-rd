@@ -80,6 +80,7 @@ NARRACIÓN (entre 175 y 200 palabras, para durar más de un minuto):
 Tono: cercano, claro, con ritmo, frases cortas. Español neutro con calidez caribeña, sin groserías.
 PORTADA: un titular de 3 a 6 palabras que dé ganas de ver el video, y la palabra o frase corta (1 o 2 palabras, tal cual aparece en el titular) que se resalta.
 ESCENAS: exactamente 6 descripciones en INGLÉS para un generador de imágenes fotorrealistas, en el orden de la narración. Cada una: qué se ve, concreto (lugar, objeto, animal, luz). Sin texto en la imagen, sin personas famosas reales.
+Escribe TODO en español, también el título.
 Responde SOLO con JSON:
 {"titulo": "...", "portada": "...", "resaltar": "...", "narracion": "...", "escenas": ["...","...","...","...","...","..."], "descripcion": "una línea para el post", "hashtags": ["#curiosidades", "..."]}"""
 
@@ -133,6 +134,33 @@ def pedir_guion(categoria, anteriores, extra=""):
                 print(f"  {nombre} falló: {str(e)[:300]}")
                 time.sleep(16)
     raise SystemExit(f"No se pudo escribir el guion: {ultimo_error}")
+
+
+VERIFICAR = """Eres un verificador de datos muy estricto. Revisa el guion de un video de curiosidades.
+Marca como problema cualquier afirmación falsa, exagerada o dudosa (récords, "el más grande del mundo", cifras, fechas).
+Si hay problemas, reescribe la narración (misma longitud y estilo) dejando solo lo que sea cierto y verificable, y corrige el título y el titular de portada si hace falta. Todo en español.
+Responde SOLO con JSON: {"ok": true o false, "problemas": ["..."], "titulo": "...", "portada": "...", "resaltar": "...", "narracion": "..."}"""
+
+
+def verificar(g):
+    contenido = json.dumps({k: g.get(k) for k in ("titulo", "portada", "resaltar", "narracion")}, ensure_ascii=False)
+    mensajes = [{"role": "system", "content": VERIFICAR}, {"role": "user", "content": contenido}]
+    for nombre, url, cuerpo, headers in proveedores():
+        try:
+            v = json.loads(re.search(r"\{.*\}", _pedir(url, {**cuerpo, "messages": mensajes}, headers), re.S).group(0))
+            if v.get("ok") is True or not v.get("problemas"):
+                print(f"Verificación ({nombre}): sin problemas")
+                return g, []
+            print(f"Verificación ({nombre}) corrigió: {v['problemas']}")
+            if len(str(v.get("narracion", "")).split()) >= 140:
+                for k in ("titulo", "portada", "resaltar", "narracion"):
+                    if v.get(k):
+                        g[k] = v[k]
+            return g, v["problemas"]
+        except Exception as e:
+            print(f"  verificación con {nombre} falló: {str(e)[:200]}")
+            time.sleep(16)
+    return g, ["no se pudo verificar"]
 
 
 # ---------- 3. Imágenes ----------
@@ -416,11 +444,11 @@ def main():
         mp3 = TMP / "voz.mp3"
         correr(["ffmpeg", "-y", "-v", "error", "-f", "lavfi", "-i", "sine=frequency=180:duration=62",
                 "-c:a", "libmp3lame", str(mp3)])
-        palabras = []
+        palabras, revisar = [], []
     else:
         anteriores = [l.split("|")[3].strip() for l in reg]
         print(f"{SERIE} #{numero:03d} · categoría: {categoria}")
-        g = pedir_guion(categoria, anteriores)
+        g, revisar = verificar(pedir_guion(categoria, anteriores))
         cierre_hablado = f" Sígueme para el {SERIE.lower()} número {numero + 1}."
         mp3, palabras = narrar(g["narracion"] + cierre_hablado)
         if duracion(mp3) + CIERRE_SEG < 61.5:  # que pase del minuto
@@ -428,7 +456,7 @@ def main():
             mp3, palabras = narrar(g["narracion"] + cierre_hablado, rate="-6%")
         if duracion(mp3) + CIERRE_SEG < 61.5:
             print("Sigue corto, se pide un guion más largo")
-            g = pedir_guion(categoria, anteriores, "La narración anterior quedó corta: escribe entre 195 y 215 palabras.")
+            g, revisar = verificar(pedir_guion(categoria, anteriores, "La narración anterior quedó corta: escribe entre 195 y 215 palabras."))
             mp3, palabras = narrar(g["narracion"] + cierre_hablado)
         imagenes = bajar_imagenes(g["escenas"][:6])
         while len(imagenes) < 4:
@@ -448,7 +476,8 @@ def main():
             tags += " " + t
     (SAL / "descripcion.txt").write_text(
         f"{SERIE} #{numero:03d} · {g['titulo']}\n\n{g.get('descripcion', '')}\n\n{tags.strip()}\n", encoding="utf-8")
-    (SAL / "guion.txt").write_text(g["narracion"] + "\n", encoding="utf-8")
+    nota = ("\n\nREVISAR ANTES DE PUBLICAR: " + "; ".join(map(str, revisar))) if revisar else ""
+    (SAL / "guion.txt").write_text(g["narracion"] + nota + "\n", encoding="utf-8")
     if not PRUEBA:
         with open(RAIZ / "registro.txt", "a", encoding="utf-8") as fh:
             fh.write(f"{hoy} | #{numero:03d} | {categoria} | {g['titulo']}\n")
