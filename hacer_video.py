@@ -177,7 +177,7 @@ No uses nombres científicos en latín ni listas largas de cosas; escoge lo más
 Escribe las unidades y símbolos en palabras ("kilómetros por hora", "grados", "por ciento"), nunca abreviados, y las cifras grandes redondeadas en palabras ("más de tres millones").
 1) Primera frase: gancho fuerte de máximo 12 palabras.
 2) 2 o 3 datos interesantes del artículo, con el porqué.
-3) Termina con una pregunta para que comenten. NO pidas que te sigan.
+3) La ÚLTIMA frase debe ser una pregunta para que comenten; no pongas nada después. NO pidas que te sigan.
 PORTADA: titular de 3 a 6 palabras, y "resaltar": 1 o 2 palabras tal cual aparecen en el titular.
 BUSQUEDAS: 3 frases cortas en INGLÉS para buscar fotos reales del tema (ej. "Lake Baikal winter ice").
 Todo en español salvo las búsquedas.
@@ -186,7 +186,7 @@ Responde SOLO JSON: {"titulo": "...", "portada": "...", "resaltar": "...", "narr
 SISTEMA_VERIFICAR = """Eres verificador de datos muy estricto. Te doy un ARTÍCULO de Wikipedia y un GUION.
 Revisa cada afirmación del guion: debe estar respaldada por el artículo. Lo que no esté en el artículo, o lo contradiga, es un problema.
 Si hay problemas, corrige SOLO las frases con problemas y deja todo lo demás igual: mismo tono de conversación con "tú", mismo gancho inicial,
-misma pregunta final para comentar, entre 175 y 200 palabras. No lo conviertas en texto de enciclopedia ni en una lista. Corrige titulo/portada/resaltar si hace falta.
+misma pregunta final para comentar (que debe ser SIEMPRE la última frase, nada después), entre 175 y 200 palabras. No lo conviertas en texto de enciclopedia ni en una lista. Corrige titulo/portada/resaltar si hace falta.
 Responde SOLO JSON: {"ok": true o false, "problemas": ["..."], "titulo": "...", "portada": "...", "resaltar": "...", "narracion": "..."}"""
 
 
