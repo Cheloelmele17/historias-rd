@@ -26,8 +26,8 @@ S = W / 720                     # escala del diseño (se diseñó en 720x1280)
 PORTADA_SEG, CIERRE_SEG = 1.3, 2.2
 VOCES = [os.environ.get("VOZ", "es-MX-JorgeNeural"), "es-US-AlonsoNeural", "es-DO-EmilioNeural"]
 UA = "DatoDiarioBot/1.0 (https://github.com/Cheloelmele17/historias-rd)"
-CATEGORIAS = ["PAÍSES", "ANIMALES", "TECNOLOGÍA", "ESPACIO", "CUERPO HUMANO", "HISTORIA", "NATURALEZA",
-              "INVENTOS", "CIUDADES", "CIENCIA", "COMIDA DEL MUNDO", "LUGARES INCREÍBLES"]
+CATEGORIAS = ["LUGARES DEL MUNDO", "ANIMALES", "TECNOLOGÍA", "ESPACIO", "CUERPO HUMANO", "HISTORIA", "NATURALEZA",
+              "INVENTOS", "CIUDADES", "CIENCIA", "COMIDA DEL MUNDO", "MISTERIOS DE LA NATURALEZA"]
 PRUEBA = "--prueba-local" in sys.argv
 
 
@@ -154,7 +154,7 @@ def escoger_tema(categoria, usados):
         if not art or art["titulo"] in usados or len(art["texto"]) < 2500:
             continue
         fotos = fotos_commons(art["titulo"], solo_contar=True)
-        if fotos < 3:
+        if fotos < 4:
             print(f"  {art['titulo']}: pocas fotos ({fotos})")
             continue
         print(f"Tema: {art['titulo']} ({len(art['texto'])} letras, {fotos} fotos)")
@@ -208,18 +208,15 @@ def escribir_guion(art, extra=""):
 
 
 # ---------- 5. Fotos reales de Wikimedia Commons ----------
-def _commons(busqueda, limite=20):
-    q = urllib.parse.urlencode({"action": "query", "generator": "search", "gsrnamespace": 6, "gsrsearch": busqueda,
-                                "gsrlimit": limite, "prop": "imageinfo", "iiprop": "url|size|mime|extmetadata",
-                                "iiurlwidth": 1600, "format": "json", "formatversion": 2})
-    paginas = bajar_json(f"https://commons.wikimedia.org/w/api.php?{q}").get("query", {}).get("pages", [])
+def _filtrar(paginas):
     out = []
     for p in sorted(paginas, key=lambda x: x.get("index", 99)):
         ii = (p.get("imageinfo") or [{}])[0]
         nombre = p.get("title", "").lower()
         if ii.get("mime") != "image/jpeg" or ii.get("width", 0) < 900 or ii.get("height", 0) < 600:
             continue
-        if any(x in nombre for x in ("logo", "map", "mapa", "flag", "bandera", "escudo", "coat of arms", "diagram", "locator", "border", "frontera", "chart", "graph")):
+        if any(x in nombre for x in ("logo", "map", "mapa", "flag", "bandera", "escudo", "coat of arms", "diagram",
+                                      "locator", "border", "frontera", "chart", "graph", "icon", "signature", "firma")):
             continue
         meta = ii.get("extmetadata", {})
         autor = re.sub(r"<[^>]+>", "", meta.get("Artist", {}).get("value", "")).strip()[:80]
@@ -228,19 +225,44 @@ def _commons(busqueda, limite=20):
     return out
 
 
+IIPROP = {"prop": "imageinfo", "iiprop": "url|size|mime|extmetadata", "iiurlwidth": 1600, "format": "json", "formatversion": 2}
+
+
+def _imagenes_articulo(lang, titulo):
+    q = urllib.parse.urlencode({"action": "query", "generator": "images", "titles": titulo, "gimlimit": 50,
+                                "redirects": 1, **IIPROP})
+    return _filtrar(bajar_json(f"https://{lang}.wikipedia.org/w/api.php?{q}").get("query", {}).get("pages", []))
+
+
+def _titulo_ingles(titulo):
+    q = urllib.parse.urlencode({"action": "query", "prop": "langlinks", "lllang": "en", "titles": titulo,
+                                "redirects": 1, "format": "json", "formatversion": 2})
+    p = bajar_json(f"https://es.wikipedia.org/w/api.php?{q}")["query"]["pages"][0]
+    return (p.get("langlinks") or [{}])[0].get("title")
+
+
+def _commons(busqueda, limite=12):
+    q = urllib.parse.urlencode({"action": "query", "generator": "search", "gsrnamespace": 6, "gsrsearch": busqueda,
+                                "gsrlimit": limite, **IIPROP})
+    return _filtrar(bajar_json(f"https://commons.wikimedia.org/w/api.php?{q}").get("query", {}).get("pages", []))
+
+
 def fotos_commons(titulo, busquedas=(), solo_contar=False):
+    """Primero las fotos del propio artículo (español e inglés), que siempre son del tema; luego búsquedas."""
     vistas, fotos = set(), []
-    for b in [*busquedas, titulo]:
+    fuentes = [lambda: _imagenes_articulo("es", titulo)]
+    fuentes.append(lambda: (lambda en: _imagenes_articulo("en", en) if en else [])(_titulo_ingles(titulo)))
+    if not solo_contar:
+        fuentes += [lambda b=b: _commons(f"{b}") for b in busquedas]
+    for fuente in fuentes:
         try:
-            for f in _commons(b):
+            for f in fuente():
                 if f["titulo"] not in vistas:
                     vistas.add(f["titulo"])
                     fotos.append(f)
         except Exception as e:
-            print(f"  Commons falló con {b}: {e}")
-        if solo_contar:
-            return len(fotos)
-    return fotos
+            print(f"  búsqueda de fotos falló: {e}")
+    return len(fotos) if solo_contar else fotos
 
 
 def bajar_fotos(fotos, cuantas=6):
