@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 # Video diario de curiosidades (países, tecnología, ciencia, historia...) con estilo propio "menta y noche".
-#   guion  -> GitHub Models (con el GITHUB_TOKEN de Actions, sin claves extra)
+#   guion  -> Pollinations texto (gratis, sin cuenta) o Gemini si hay clave GEMINI_API_KEY
 #   fotos  -> Pollinations (gratis, sin cuenta)
 #   voz    -> edge-tts (voces de Microsoft, gratis)
 #   video  -> Pillow + ffmpeg (portada, marco, número, subtítulos con la palabra resaltada, cierre)
 # Resultado: salida/video.mp4, salida/portada.jpg y salida/descripcion.txt
 # Prueba sin internet: python3 hacer_video.py --prueba-local
-import asyncio, datetime, json, os, pathlib, random, re, subprocess, sys, time, urllib.parse, urllib.request
+import asyncio, datetime, json, os, pathlib, random, re, subprocess, sys, time, urllib.error, urllib.parse, urllib.request
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
 # ===== Ajustes de marca (cambiar aquí) =====
@@ -22,7 +22,6 @@ TMP = SAL / "tmp"
 W, H, FPS = 720, 1280, 30
 PORTADA_SEG, CIERRE_SEG = 1.3, 2.2
 VOCES = [os.environ.get("VOZ", "es-MX-JorgeNeural"), "es-DO-EmilioNeural", "es-US-AlonsoNeural"]
-MODELOS = ["openai/gpt-4.1-mini", "openai/gpt-4o-mini", "openai/gpt-4o"]
 ESTILO = (", photorealistic, cinematic lighting, vivid colors, sharp focus, high detail, vertical composition,"
           " no text, no letters, no watermark, no logo")
 CATEGORIAS = ["PAÍSES", "TECNOLOGÍA", "CIENCIA", "CUERPO HUMANO", "ANIMALES", "HISTORIA", "ESPACIO",
@@ -85,32 +84,54 @@ Responde SOLO con JSON:
 {"titulo": "...", "portada": "...", "resaltar": "...", "narracion": "...", "escenas": ["...","...","...","...","...","..."], "descripcion": "una línea para el post", "hashtags": ["#curiosidades", "..."]}"""
 
 
+def _pedir(url, cuerpo, headers):
+    req = urllib.request.Request(url, data=json.dumps(cuerpo).encode(),
+                                 headers={"Content-Type": "application/json", "User-Agent": "dato-diario/1.0", **headers})
+    try:
+        with urllib.request.urlopen(req, timeout=180) as r:
+            texto = r.read().decode("utf-8", "replace")
+    except urllib.error.HTTPError as e:
+        raise ValueError(f"HTTP {e.code}: {e.read()[:200]!r}")
+    try:  # respuesta estilo OpenAI o texto directo
+        texto = json.loads(texto)["choices"][0]["message"]["content"]
+    except Exception:
+        pass
+    return texto
+
+
+def proveedores():
+    # 1) Gemini (opcional, gratis con clave de Google AI Studio en el secreto GEMINI_API_KEY)
+    clave = os.environ.get("GEMINI_API_KEY", "").strip()
+    if clave:
+        for modelo in ["gemini-flash-latest", "gemini-flash-lite-latest"]:
+            yield (f"gemini:{modelo}", "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
+                   {"model": modelo, "temperature": 0.9, "response_format": {"type": "json_object"}},
+                   {"Authorization": f"Bearer {clave}"})
+    # 2) Pollinations (gratis, sin cuenta)
+    yield ("pollinations:openai", "https://text.pollinations.ai/openai",
+           {"model": "openai", "temperature": 0.9, "response_format": {"type": "json_object"}}, {})
+    yield ("pollinations:texto", "https://text.pollinations.ai/", {"model": "openai", "jsonMode": True}, {})
+
+
 def pedir_guion(categoria, anteriores, extra=""):
-    token = os.environ.get("GITHUB_TOKEN", "")
     usados = "\n".join(f"- {t}" for t in anteriores[-80:]) or "(ninguno todavía)"
     pedido = (f"Categoría de hoy: {categoria}.\nNo repitas ninguno de estos temas ya publicados:\n{usados}\n{extra}")
+    mensajes = [{"role": "system", "content": SISTEMA}, {"role": "user", "content": pedido}]
     ultimo_error = None
-    for intento in range(2):
-        for modelo in MODELOS:
-            cuerpo = json.dumps({
-                "model": modelo, "temperature": 0.9, "response_format": {"type": "json_object"},
-                "messages": [{"role": "system", "content": SISTEMA}, {"role": "user", "content": pedido}],
-            }).encode()
-            req = urllib.request.Request("https://models.github.ai/inference/chat/completions", data=cuerpo,
-                                         headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"})
+    for intento in range(3):
+        for nombre, url, cuerpo, headers in proveedores():
             try:
-                with urllib.request.urlopen(req, timeout=120) as r:
-                    texto = json.load(r)["choices"][0]["message"]["content"]
+                texto = _pedir(url, {**cuerpo, "messages": mensajes}, headers)
                 g = json.loads(re.search(r"\{.*\}", texto, re.S).group(0))
                 palabras = len(g["narracion"].split())
                 if palabras < 150 or len(g["escenas"]) < 4 or not g.get("portada"):
                     raise ValueError(f"guion incompleto: {palabras} palabras, {len(g['escenas'])} escenas")
-                print(f"Guion con {modelo}: {g['titulo']} ({palabras} palabras)")
+                print(f"Guion con {nombre}: {g['titulo']} ({palabras} palabras)")
                 return g
             except Exception as e:
                 ultimo_error = e
-                print(f"  {modelo} falló: {e}")
-                time.sleep(5)
+                print(f"  {nombre} falló: {str(e)[:300]}")
+                time.sleep(16)
     raise SystemExit(f"No se pudo escribir el guion: {ultimo_error}")
 
 
