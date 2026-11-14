@@ -45,3 +45,27 @@ jobs:
           git add registro.txt
           git commit -m "Dato del $(date -u +%Y-%m-%d)" || echo "sin cambios"
           git push
+      - name: Avisar al celular (ntfy)
+        if: always()
+        env:
+          NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
+          ESTADO: ${{ job.status }}
+        run: |
+          [ -n "$NTFY_TOPIC" ] || exit 0
+          python3 - <<'PY'
+          import json, os, pathlib, urllib.request
+          base = "https://github.com/Cheloelmele17/historias-rd/releases"
+          desc = pathlib.Path("salida/descripcion.txt")
+          if os.environ["ESTADO"] == "success" and desc.exists():
+              msg = {"title": "Video listo para TikTok", "message": desc.read_text(encoding="utf-8")[:3500],
+                     "click": base + "/tag/ultimo", "attach": base + "/download/ultimo/portada.jpg",
+                     "filename": "portada.jpg", "tags": ["movie_camera"]}
+          else:
+              msg = {"title": "Este turno no salió video", "tags": ["warning"],
+                     "message": "El robot no pudo hacer el video (no pasó la revisión de datos o falló algo). El próximo turno lo intenta de nuevo.",
+                     "click": "https://github.com/Cheloelmele17/historias-rd/actions"}
+          msg["topic"] = os.environ["NTFY_TOPIC"]
+          req = urllib.request.Request("https://ntfy.sh", data=json.dumps(msg).encode(), headers={"Content-Type": "application/json"})
+          urllib.request.urlopen(req, timeout=30)
+          print("Aviso enviado")
+          PY
