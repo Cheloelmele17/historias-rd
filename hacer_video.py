@@ -107,7 +107,7 @@ def proveedores():
 
 def preguntar(sistema, usuario, temperatura=0.7):
     ultimo = None
-    for intento in range(2):
+    for intento in range(4):
         for nombre, url, modelo, clave in proveedores():
             cuerpo = {"model": modelo, "temperature": temperatura, "response_format": {"type": "json_object"},
                       "messages": [{"role": "system", "content": sistema}, {"role": "user", "content": usuario}]}
@@ -119,7 +119,7 @@ def preguntar(sistema, usuario, temperatura=0.7):
             except Exception as e:
                 ultimo = e
                 print(f"  {nombre} falló: {str(e)[:300]}", flush=True)
-                time.sleep(5)
+                time.sleep(65 if "429" in str(e) else 5)  # el plan gratis limita el texto por minuto
     raise SystemExit(f"Ninguna IA respondió (¿falta GROQ_API_KEY?): {ultimo}")
 
 
@@ -183,13 +183,13 @@ Responde SOLO JSON: {"ok": true o false, "problemas": ["..."], "titulo": "...", 
 
 
 def escribir_guion(art, extra=""):
-    usuario = f"ARTÍCULO: {art['titulo']}\n\n{art['texto'][:9000]}\n\n{extra}"
+    usuario = f"ARTÍCULO: {art['titulo']}\n\n{art['texto'][:6000]}\n\n{extra}"
     g, quien = preguntar(SISTEMA_GUION, usuario)
     if len(str(g.get("narracion", "")).split()) < 140 or not g.get("portada"):
         raise SystemExit(f"Guion incompleto de {quien}")
     print(f"Guion ({quien}): {g['titulo']} ({len(g['narracion'].split())} palabras)")
     for ronda in range(2):
-        v, quien = preguntar(SISTEMA_VERIFICAR, f"ARTÍCULO:\n{art['texto'][:9000]}\n\nGUION:\n"
+        v, quien = preguntar(SISTEMA_VERIFICAR, f"ARTÍCULO:\n{art['texto'][:6000]}\n\nGUION:\n"
                              + json.dumps({k: g.get(k) for k in ("titulo", "portada", "resaltar", "narracion")},
                                           ensure_ascii=False), temperatura=0.2)
         if v.get("ok") is True or not v.get("problemas"):
