@@ -1,13 +1,15 @@
 #!/usr/bin/env python3
-# Video diario de curiosidades (países, tecnología, ciencia, historia...) con estilo propio "menta y noche".
-#   guion  -> Pollinations texto (gratis, sin cuenta) o Gemini si hay clave GEMINI_API_KEY
-#   fotos  -> Pollinations (gratis, sin cuenta)
-#   voz    -> edge-tts (voces de Microsoft, gratis)
-#   video  -> Pillow + ffmpeg (portada, marco, número, subtítulos con la palabra resaltada, cierre)
-# Resultado: salida/video.mp4, salida/portada.jpg y salida/descripcion.txt
+# Video de curiosidades con estilo "menta y noche", basado SOLO en artículos reales de Wikipedia.
+#   tema y datos -> Wikipedia en español (la IA solo explica lo que dice el artículo)
+#   guion        -> Groq (clave GROQ_API_KEY) o Gemini (GEMINI_API_KEY), con verificación contra el artículo
+#   fotos        -> fotos reales de Wikimedia Commons
+#   voz          -> edge-tts
+#   video        -> Pillow + ffmpeg, 1080x1920
+# Resultado: salida/video.mp4, salida/portada.jpg, salida/descripcion.txt, salida/guion.txt
 # Prueba sin internet: python3 hacer_video.py --prueba-local
-import asyncio, datetime, json, os, pathlib, random, re, subprocess, sys, time, urllib.error, urllib.parse, urllib.request
-from PIL import Image, ImageDraw, ImageFilter, ImageFont
+import asyncio, datetime, io, json, os, pathlib, random, re, subprocess, sys, time
+import urllib.error, urllib.parse, urllib.request
+from PIL import Image, ImageDraw, ImageFilter, ImageFont, ImageOps
 
 # ===== Ajustes de marca (cambiar aquí) =====
 USUARIO = os.environ.get("USUARIO_TIKTOK", "")        # ej. "@datodiario" (vacío = no se muestra)
@@ -19,17 +21,21 @@ SERIE = "DATO"
 RAIZ = pathlib.Path(__file__).resolve().parent
 SAL = RAIZ / "salida"
 TMP = SAL / "tmp"
-W, H, FPS = 720, 1280, 30
+W, H, FPS = 1080, 1920, 30
+S = W / 720                     # escala del diseño (se diseñó en 720x1280)
 PORTADA_SEG, CIERRE_SEG = 1.3, 2.2
-VOCES = [os.environ.get("VOZ", "es-MX-JorgeNeural"), "es-DO-EmilioNeural", "es-US-AlonsoNeural"]
-ESTILO = (", photorealistic, cinematic lighting, vivid colors, sharp focus, high detail, vertical composition,"
-          " no text, no letters, no watermark, no logo")
-CATEGORIAS = ["PAÍSES", "TECNOLOGÍA", "CIENCIA", "CUERPO HUMANO", "ANIMALES", "HISTORIA", "ESPACIO",
-              "INVENTOS", "CIUDADES", "NATURALEZA", "COMIDA DEL MUNDO", "RÉCORDS"]
+VOCES = [os.environ.get("VOZ", "es-MX-JorgeNeural"), "es-US-AlonsoNeural", "es-DO-EmilioNeural"]
+UA = "DatoDiarioBot/1.0 (https://github.com/Cheloelmele17/historias-rd)"
+CATEGORIAS = ["PAÍSES", "ANIMALES", "TECNOLOGÍA", "ESPACIO", "CUERPO HUMANO", "HISTORIA", "NATURALEZA",
+              "INVENTOS", "CIUDADES", "CIENCIA", "COMIDA DEL MUNDO", "LUGARES INCREÍBLES"]
 PRUEBA = "--prueba-local" in sys.argv
 
 
-def hexass(rgb):  # color para subtítulos ASS (&HBBGGRR&)
+def s(v):
+    return int(round(v * S))
+
+
+def hexass(rgb):
     return "&H%02X%02X%02X&" % (rgb[2], rgb[1], rgb[0])
 
 
@@ -57,152 +63,213 @@ def duracion(ruta):
     return float(out.strip())
 
 
-# ---------- 1. Número y tema ----------
+def bajar(url, headers=None, data=None, timeout=60):
+    req = urllib.request.Request(url, data=data, headers={"User-Agent": UA, **(headers or {})})
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            return r.read()
+    except urllib.error.HTTPError as e:
+        raise ValueError(f"HTTP {e.code}: {e.read()[:200]!r}")
+
+
+def bajar_json(url, **kw):
+    return json.loads(bajar(url, **kw).decode("utf-8", "replace"))
+
+
+# ---------- 1. Registro ----------
 def registro():
     reg = RAIZ / "registro.txt"
     if not reg.exists():
         return []
-    return [l for l in reg.read_text(encoding="utf-8").splitlines() if l.count("|") >= 3]
+    return [l for l in reg.read_text(encoding="utf-8").splitlines() if l.count("|") >= 3 and not l.startswith("#")]
 
 
-def escoger_categoria(numero):
-    return CATEGORIAS[(numero - 1) % len(CATEGORIAS)]
-
-
-# ---------- 2. Guion ----------
-SISTEMA = """Eres guionista de un canal de TikTok de curiosidades en español latino, para público dominicano y latinoamericano.
-Cada video explica UN dato curioso real, sorprendente y fácil de comprobar (de cualquier país, tecnología, ciencia, historia, animales, espacio, etc.).
-REGLAS DE VERDAD: usa solo datos ampliamente conocidos y verificables. Si no estás seguro de una cifra exacta, no la pongas: usa "más de", "casi" o descríbelo sin número. Nada de mitos presentados como hechos. Nada de política, religión, tragedias recientes ni personas privadas.
-NARRACIÓN (entre 175 y 200 palabras, para durar más de un minuto):
-1) Primera frase: gancho fuerte que dé curiosidad (pregunta o afirmación sorprendente), máximo 12 palabras.
-2) Explica el dato con 2 o 3 detalles interesantes y el porqué.
-3) Termina con una pregunta para que comenten. NO pidas que te sigan (eso se agrega aparte).
-Tono: cercano, claro, con ritmo, frases cortas. Español neutro con calidez caribeña, sin groserías.
-PORTADA: un titular de 3 a 6 palabras que dé ganas de ver el video, y la palabra o frase corta (1 o 2 palabras, tal cual aparece en el titular) que se resalta.
-ESCENAS: exactamente 6 descripciones en INGLÉS para un generador de imágenes fotorrealistas, en el orden de la narración. Cada una: qué se ve, concreto (lugar, objeto, animal, luz). Sin texto en la imagen, sin personas famosas reales.
-Escribe TODO en español, también el título.
-Responde SOLO con JSON:
-{"titulo": "...", "portada": "...", "resaltar": "...", "narracion": "...", "escenas": ["...","...","...","...","...","..."], "descripcion": "una línea para el post", "hashtags": ["#curiosidades", "..."]}"""
-
-
-def _pedir(url, cuerpo, headers):
-    req = urllib.request.Request(url, data=json.dumps(cuerpo).encode(),
-                                 headers={"Content-Type": "application/json", "User-Agent": "dato-diario/1.0", **headers})
-    try:
-        with urllib.request.urlopen(req, timeout=180) as r:
-            texto = r.read().decode("utf-8", "replace")
-    except urllib.error.HTTPError as e:
-        raise ValueError(f"HTTP {e.code}: {e.read()[:200]!r}")
-    try:  # respuesta estilo OpenAI o texto directo
-        texto = json.loads(texto)["choices"][0]["message"]["content"]
-    except Exception:
-        pass
-    return texto
-
-
+# ---------- 2. IA (Groq o Gemini) ----------
 def proveedores():
-    # 1) Gemini (opcional, gratis con clave de Google AI Studio en el secreto GEMINI_API_KEY)
+    clave = os.environ.get("GROQ_API_KEY", "").strip()
+    if clave:
+        try:
+            ids = [m["id"] for m in bajar_json("https://api.groq.com/openai/v1/models",
+                                               headers={"Authorization": f"Bearer {clave}"})["data"]]
+        except Exception as e:
+            print(f"  no se pudo leer la lista de modelos de Groq: {e}")
+            ids = []
+        preferidos = ["openai/gpt-oss-120b", "llama-3.3-70b-versatile", "moonshotai/kimi-k2-instruct",
+                      "meta-llama/llama-4-maverick-17b-128e-instruct", "qwen/qwen3-32b"]
+        elegidos = [m for m in preferidos if m in ids] or preferidos[:2]
+        for m in elegidos[:3]:
+            yield (f"groq:{m}", "https://api.groq.com/openai/v1/chat/completions", m, clave)
     clave = os.environ.get("GEMINI_API_KEY", "").strip()
     if clave:
-        for modelo in ["gemini-flash-latest", "gemini-flash-lite-latest"]:
-            yield (f"gemini:{modelo}", "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
-                   {"model": modelo, "temperature": 0.9, "response_format": {"type": "json_object"}},
-                   {"Authorization": f"Bearer {clave}"})
-    # 2) Pollinations (gratis, sin cuenta)
-    yield ("pollinations:openai", "https://text.pollinations.ai/openai",
-           {"model": "openai", "temperature": 0.9, "response_format": {"type": "json_object"}}, {})
-    yield ("pollinations:texto", "https://text.pollinations.ai/", {"model": "openai", "jsonMode": True}, {})
+        for m in ["gemini-flash-latest", "gemini-flash-lite-latest"]:
+            yield (f"gemini:{m}", "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions", m, clave)
 
 
-def pedir_guion(categoria, anteriores, extra=""):
-    usados = "\n".join(f"- {t}" for t in anteriores[-80:]) or "(ninguno todavía)"
-    pedido = (f"Categoría de hoy: {categoria}.\nNo repitas ninguno de estos temas ya publicados:\n{usados}\n{extra}")
-    mensajes = [{"role": "system", "content": SISTEMA}, {"role": "user", "content": pedido}]
-    ultimo_error = None
-    for intento in range(3):
-        for nombre, url, cuerpo, headers in proveedores():
+def preguntar(sistema, usuario, temperatura=0.7):
+    ultimo = None
+    for intento in range(2):
+        for nombre, url, modelo, clave in proveedores():
+            cuerpo = {"model": modelo, "temperature": temperatura, "response_format": {"type": "json_object"},
+                      "messages": [{"role": "system", "content": sistema}, {"role": "user", "content": usuario}]}
             try:
-                texto = _pedir(url, {**cuerpo, "messages": mensajes}, headers)
-                g = json.loads(re.search(r"\{.*\}", texto, re.S).group(0))
-                palabras = len(g["narracion"].split())
-                if palabras < 150 or len(g["escenas"]) < 4 or not g.get("portada"):
-                    raise ValueError(f"guion incompleto: {palabras} palabras, {len(g['escenas'])} escenas")
-                print(f"Guion con {nombre}: {g['titulo']} ({palabras} palabras)")
-                return g
+                r = bajar_json(url, headers={"Authorization": f"Bearer {clave}", "Content-Type": "application/json"},
+                               data=json.dumps(cuerpo).encode(), timeout=180)
+                texto = r["choices"][0]["message"]["content"]
+                return json.loads(re.search(r"\{.*\}", texto, re.S).group(0)), nombre
             except Exception as e:
-                ultimo_error = e
-                print(f"  {nombre} falló: {str(e)[:300]}")
-                time.sleep(16)
-    raise SystemExit(f"No se pudo escribir el guion: {ultimo_error}")
+                ultimo = e
+                print(f"  {nombre} falló: {str(e)[:300]}", flush=True)
+                time.sleep(5)
+    raise SystemExit(f"Ninguna IA respondió (¿falta GROQ_API_KEY?): {ultimo}")
 
 
-VERIFICAR = """Eres un verificador de datos muy estricto. Revisa el guion de un video de curiosidades.
-Marca como problema cualquier afirmación falsa, exagerada o dudosa (récords, "el más grande del mundo", cifras, fechas).
-Si hay problemas, reescribe la narración (misma longitud y estilo) dejando solo lo que sea cierto y verificable, y corrige el título y el titular de portada si hace falta. Todo en español.
-Responde SOLO con JSON: {"ok": true o false, "problemas": ["..."], "titulo": "...", "portada": "...", "resaltar": "...", "narracion": "..."}"""
+# ---------- 3. Tema real de Wikipedia ----------
+def wiki_articulo(titulo):
+    q = urllib.parse.urlencode({"action": "query", "prop": "extracts|info", "explaintext": 1, "redirects": 1,
+                                "inprop": "url", "titles": titulo, "format": "json", "formatversion": 2})
+    p = bajar_json(f"https://es.wikipedia.org/w/api.php?{q}")["query"]["pages"][0]
+    if p.get("missing") or not p.get("extract"):
+        return None
+    texto = re.split(r"\n== (Véase también|Referencias|Bibliografía|Enlaces externos|Notas) ==", p["extract"])[0]
+    return {"titulo": p["title"], "url": p.get("fullurl", ""), "texto": texto.strip()}
 
 
-def verificar(g):
-    contenido = json.dumps({k: g.get(k) for k in ("titulo", "portada", "resaltar", "narracion")}, ensure_ascii=False)
-    mensajes = [{"role": "system", "content": VERIFICAR}, {"role": "user", "content": contenido}]
-    for nombre, url, cuerpo, headers in proveedores():
+def escoger_tema(categoria, usados):
+    sistema = ("Eres editor de un canal de curiosidades. Propones artículos de Wikipedia en español que tengan "
+               "datos sorprendentes y verificables, interesantes para público latino. Responde solo JSON.")
+    lista = ", ".join(usados[-120:]) or "ninguno"
+    usuario = (f"Categoría: {categoria}. Dame 8 títulos EXACTOS de artículos existentes en es.wikipedia.org "
+               f"(lugares, animales, objetos, fenómenos o hechos concretos, no personas vivas ni temas políticos). "
+               f"No uses ninguno de estos: {lista}.\n"
+               '{"titulos": ["...", "..."]}')
+    propuesta, _ = preguntar(sistema, usuario, temperatura=1.0)
+    titulos = [t for t in propuesta.get("titulos", []) if isinstance(t, str)]
+    random.shuffle(titulos)
+    for t in titulos:
         try:
-            v = json.loads(re.search(r"\{.*\}", _pedir(url, {**cuerpo, "messages": mensajes}, headers), re.S).group(0))
-            if v.get("ok") is True or not v.get("problemas"):
-                print(f"Verificación ({nombre}): sin problemas")
-                return g, []
-            print(f"Verificación ({nombre}) corrigió: {v['problemas']}")
-            if len(str(v.get("narracion", "")).split()) >= 140:
-                for k in ("titulo", "portada", "resaltar", "narracion"):
-                    if v.get(k):
-                        g[k] = v[k]
-            return g, v["problemas"]
+            art = wiki_articulo(t)
         except Exception as e:
-            print(f"  verificación con {nombre} falló: {str(e)[:200]}")
-            time.sleep(16)
-    return g, ["no se pudo verificar"]
+            print(f"  Wikipedia falló con {t}: {e}")
+            continue
+        if not art or art["titulo"] in usados or len(art["texto"]) < 2500:
+            continue
+        fotos = fotos_commons(art["titulo"], solo_contar=True)
+        if fotos < 3:
+            print(f"  {art['titulo']}: pocas fotos ({fotos})")
+            continue
+        print(f"Tema: {art['titulo']} ({len(art['texto'])} letras, {fotos} fotos)")
+        return art
+    raise SystemExit("No se encontró un artículo bueno en Wikipedia para hoy")
 
 
-# ---------- 3. Imágenes ----------
-def es_imagen(d):
-    return d[:3] == b"\xff\xd8\xff" or d[:8] == b"\x89PNG\r\n\x1a\n" or d[8:12] == b"WEBP"
+# ---------- 4. Guion basado en el artículo ----------
+SISTEMA_GUION = """Eres guionista de un canal de TikTok de curiosidades para público dominicano y latino.
+Te doy el texto de un artículo de Wikipedia. Escribe el guion USANDO SOLO información que está en ese texto.
+Prohibido agregar datos, cifras, récords, comparaciones o lugares que no aparezcan en el artículo. No mezcles otros países ni otros temas.
+Elige lo más sorprendente del artículo.
+NARRACIÓN: entre 175 y 200 palabras (más de un minuto), español neutro con calidez caribeña, frases cortas.
+1) Primera frase: gancho fuerte de máximo 12 palabras.
+2) 2 o 3 datos interesantes del artículo, con el porqué.
+3) Termina con una pregunta para que comenten. NO pidas que te sigan.
+PORTADA: titular de 3 a 6 palabras, y "resaltar": 1 o 2 palabras tal cual aparecen en el titular.
+BUSQUEDAS: 3 frases cortas en INGLÉS para buscar fotos reales del tema (ej. "Lake Baikal winter ice").
+Todo en español salvo las búsquedas.
+Responde SOLO JSON: {"titulo": "...", "portada": "...", "resaltar": "...", "narracion": "...", "descripcion": "una línea para el post", "hashtags": ["#curiosidades", "..."], "busquedas": ["...", "...", "..."]}"""
+
+SISTEMA_VERIFICAR = """Eres verificador de datos muy estricto. Te doy un ARTÍCULO de Wikipedia y un GUION.
+Revisa cada afirmación del guion: debe estar respaldada por el artículo. Lo que no esté en el artículo, o lo contradiga, es un problema.
+Si hay problemas, reescribe la narración (175 a 200 palabras, mismo estilo) usando solo lo que dice el artículo, y corrige titulo/portada/resaltar si hace falta.
+Responde SOLO JSON: {"ok": true o false, "problemas": ["..."], "titulo": "...", "portada": "...", "resaltar": "...", "narracion": "..."}"""
 
 
-def bajar_imagenes(escenas):
-    rutas, semilla = [], random.randint(1, 10_000_000)
-    for i, escena in enumerate(escenas):
-        ruta = TMP / f"img{i}.jpg"
-        url = ("https://image.pollinations.ai/prompt/" + urllib.parse.quote(escena + ESTILO, safe="") +
-               f"?width={W}&height={H}&seed={semilla + i}&nologo=true")
-        for intento in range(4):
-            try:
-                req = urllib.request.Request(url, headers={"User-Agent": "dato-diario/1.0"})
-                with urllib.request.urlopen(req, timeout=180) as r:
-                    datos = r.read()
-                if not es_imagen(datos):
-                    raise ValueError("no llegó una imagen")
-                Image.open(__import__("io").BytesIO(datos)).convert("RGB").save(ruta, quality=92)
-                rutas.append(ruta)
-                print(f"Imagen {i + 1}/{len(escenas)} lista")
-                break
-            except Exception as e:
-                print(f"  imagen {i + 1}, intento {intento + 1} falló: {e}")
-                time.sleep(20)
-        time.sleep(16)  # el plan gratis permite una imagen cada 15 segundos
-    return rutas
+def escribir_guion(art, extra=""):
+    usuario = f"ARTÍCULO: {art['titulo']}\n\n{art['texto'][:9000]}\n\n{extra}"
+    g, quien = preguntar(SISTEMA_GUION, usuario)
+    if len(str(g.get("narracion", "")).split()) < 140 or not g.get("portada"):
+        raise SystemExit(f"Guion incompleto de {quien}")
+    print(f"Guion ({quien}): {g['titulo']} ({len(g['narracion'].split())} palabras)")
+    for ronda in range(2):
+        v, quien = preguntar(SISTEMA_VERIFICAR, f"ARTÍCULO:\n{art['texto'][:9000]}\n\nGUION:\n"
+                             + json.dumps({k: g.get(k) for k in ("titulo", "portada", "resaltar", "narracion")},
+                                          ensure_ascii=False), temperatura=0.2)
+        if v.get("ok") is True or not v.get("problemas"):
+            print(f"Verificación ({quien}): todo respaldado por el artículo")
+            return g, []
+        print(f"Verificación ({quien}) corrigió: {v['problemas']}")
+        if len(str(v.get("narracion", "")).split()) < 140:
+            break
+        for k in ("titulo", "portada", "resaltar", "narracion"):
+            if v.get(k):
+                g[k] = v[k]
+    raise SystemExit("El guion no pasó la verificación; hoy no se hace video")
+
+
+# ---------- 5. Fotos reales de Wikimedia Commons ----------
+def _commons(busqueda, limite=20):
+    q = urllib.parse.urlencode({"action": "query", "generator": "search", "gsrnamespace": 6, "gsrsearch": busqueda,
+                                "gsrlimit": limite, "prop": "imageinfo", "iiprop": "url|size|mime|extmetadata",
+                                "iiurlwidth": 1600, "format": "json", "formatversion": 2})
+    paginas = bajar_json(f"https://commons.wikimedia.org/w/api.php?{q}").get("query", {}).get("pages", [])
+    out = []
+    for p in sorted(paginas, key=lambda x: x.get("index", 99)):
+        ii = (p.get("imageinfo") or [{}])[0]
+        nombre = p.get("title", "").lower()
+        if ii.get("mime") not in ("image/jpeg", "image/png") or ii.get("width", 0) < 900 or ii.get("height", 0) < 600:
+            continue
+        if any(x in nombre for x in ("logo", "map", "mapa", "flag", "bandera", "escudo", "coat of arms", "diagram", "locator")):
+            continue
+        meta = ii.get("extmetadata", {})
+        autor = re.sub(r"<[^>]+>", "", meta.get("Artist", {}).get("value", "")).strip()[:80]
+        licencia = meta.get("LicenseShortName", {}).get("value", "")
+        out.append({"url": ii.get("thumburl") or ii["url"], "titulo": p["title"], "autor": autor, "licencia": licencia})
+    return out
+
+
+def fotos_commons(titulo, busquedas=(), solo_contar=False):
+    vistas, fotos = set(), []
+    for b in [titulo, *busquedas]:
+        try:
+            for f in _commons(b):
+                if f["titulo"] not in vistas:
+                    vistas.add(f["titulo"])
+                    fotos.append(f)
+        except Exception as e:
+            print(f"  Commons falló con {b}: {e}")
+        if solo_contar:
+            return len(fotos)
+    return fotos
+
+
+def bajar_fotos(fotos, cuantas=6):
+    rutas, creditos = [], []
+    for f in fotos:
+        if len(rutas) >= cuantas:
+            break
+        try:
+            img = Image.open(io.BytesIO(bajar(f["url"], timeout=60)))
+            img = ImageOps.exif_transpose(img).convert("RGB")
+            ruta = TMP / f"foto{len(rutas)}.jpg"
+            img.save(ruta, quality=94)
+            rutas.append(ruta)
+            creditos.append(f"{f['titulo']} — {f['autor'] or 'autor en Commons'} ({f['licencia']})")
+        except Exception as e:
+            print(f"  foto falló: {e}")
+    print(f"{len(rutas)} fotos reales listas")
+    return rutas, creditos
 
 
 def imagen_de_relleno(i):
     ruta = TMP / f"relleno{i}.jpg"
     img = Image.new("RGB", (W, H), NOCHE)
     d = ImageDraw.Draw(img)
-    for k in range(0, H, 90):
-        d.line([(0, k + i * 20), (W, k + 300 + i * 20)], fill=(30, 27, 60), width=30)
+    for k in range(0, H, s(90)):
+        d.line([(0, k + i * 30), (W, k + s(300) + i * 30)], fill=(30, 27, 60), width=s(30))
     img.save(ruta, quality=92)
     return ruta
 
 
-def ajustar(img):  # recorta/escala a 720x1280
+# ---------- 6. Diseño ----------
+def cubrir(img):
     img = img.convert("RGB")
     r = max(W / img.width, H / img.height)
     img = img.resize((int(img.width * r + 0.5), int(img.height * r + 0.5)), Image.LANCZOS)
@@ -210,14 +277,32 @@ def ajustar(img):  # recorta/escala a 720x1280
     return img.crop((x, y, x + W, y + H))
 
 
-# ---------- 4. Diseño: portada, marco y cierre ----------
+def cuadro_vertical(ruta_foto, i):
+    """Foto horizontal -> fondo desenfocado + foto completa al centro (se ve nítida y sin cortar)."""
+    foto = ImageOps.exif_transpose(Image.open(ruta_foto)).convert("RGB")
+    if foto.height / foto.width >= 1.4:
+        lienzo = cubrir(foto)
+    else:
+        lienzo = cubrir(foto).filter(ImageFilter.GaussianBlur(s(28)))
+        lienzo = Image.blend(lienzo, Image.new("RGB", (W, H), NOCHE), 0.45)
+        ancho = W
+        alto = int(foto.height * ancho / foto.width)
+        if alto > int(H * 0.62):
+            alto = int(H * 0.62)
+            ancho = int(foto.width * alto / foto.height)
+        f2 = foto.resize((ancho, alto), Image.LANCZOS)
+        lienzo.paste(f2, ((W - ancho) // 2, int(H * 0.40 - alto / 2)))
+    ruta = TMP / f"cuadro{i}.jpg"
+    lienzo.save(ruta, quality=94)
+    return ruta
+
+
 def degradado_abajo(img, desde=0.38, fuerza=235):
     capa = Image.new("RGBA", (W, H), NOCHE + (0,))
     d = ImageDraw.Draw(capa)
     y0 = int(H * desde)
     for y in range(y0, H):
-        a = int(fuerza * min(1, (y - y0) / (H * 0.35)))
-        d.line([(0, y), (W, y)], fill=NOCHE + (a,))
+        d.line([(0, y), (W, y)], fill=NOCHE + (int(fuerza * min(1, (y - y0) / (H * 0.35))),))
     return Image.alpha_composite(img.convert("RGBA"), capa)
 
 
@@ -239,41 +324,40 @@ def envolver(texto, f, ancho, d):
 def placa(d, xy, texto, f, pad=(14, 6)):
     x, y = xy
     l, t, r, b = d.textbbox((x, y), texto, font=f)
-    d.rounded_rectangle([l - pad[0], t - pad[1], r + pad[0], b + pad[1]], radius=10, fill=MENTA)
+    d.rounded_rectangle([l - s(pad[0]), t - s(pad[1]), r + s(pad[0]), b + s(pad[1])], radius=s(10), fill=MENTA)
     d.text((x, y), texto, font=f, fill=NOCHE)
-    return r + pad[0]
+    return r + s(pad[0])
 
 
 def marco(d, grosor):
-    d.rectangle([0, 0, W - 1, H - 1], outline=MENTA, width=grosor)
+    d.rectangle([0, 0, W - 1, H - 1], outline=MENTA, width=s(grosor))
 
 
-def hacer_portada(img_fondo, numero, titular, resaltar, categoria):
-    img = degradado_abajo(ajustar(Image.open(img_fondo)))
+def hacer_portada(foto, numero, titular, resaltar, categoria):
+    img = degradado_abajo(cubrir(Image.open(foto)))
     d = ImageDraw.Draw(img)
     marco(d, 18)
-    placa(d, (52, 150), f"#{numero:03d}", fuente(54))
-    titular, resaltar = titular.upper(), (resaltar or "").upper().strip()
-    f = fuente(86)
+    placa(d, (s(52), s(150)), f"#{numero:03d}", fuente(s(54)))
+    titular, claves = titular.upper(), set((resaltar or "").upper().split())
+    f = fuente(s(86))
     while True:
-        lineas = envolver(titular, f, W - 110, d)
-        if len(lineas) <= 4 or f.size <= 56:
+        lineas = envolver(titular, f, W - s(110), d)
+        if len(lineas) <= 4 or f.size <= s(56):
             break
-        f = fuente(f.size - 6)
+        f = fuente(f.size - s(6))
     alto_linea = int(f.size * 1.18)
-    y = 1000 - alto_linea * len(lineas)
-    claves = set(resaltar.split())
+    y = s(1000) - alto_linea * len(lineas)
     for linea in lineas:
-        x = 55
+        x = s(55)
         for palabra in linea.split():
             limpia = re.sub(r"[^\wÁÉÍÓÚÑÜ]", "", palabra)
             if limpia and limpia in claves:
-                x = placa(d, (x + 8, y), palabra, f, pad=(8, 2)) + 10
+                x = placa(d, (x + s(8), y), palabra, f, pad=(8, 2)) + s(10)
             else:
-                d.text((x, y), palabra, font=f, fill=(255, 255, 255), stroke_width=2, stroke_fill=NOCHE)
+                d.text((x, y), palabra, font=f, fill=(255, 255, 255), stroke_width=s(2), stroke_fill=NOCHE)
                 x += d.textlength(palabra + " ", font=f)
         y += alto_linea
-    d.text((55, 1035), f"CURIOSIDADES · {categoria}", font=fuente(28), fill=MENTA)
+    d.text((s(55), s(1035)), f"CURIOSIDADES · {categoria}", font=fuente(s(28)), fill=MENTA)
     ruta = TMP / "portada.png"
     img.convert("RGB").save(ruta)
     return ruta
@@ -283,33 +367,31 @@ def hacer_marco(numero):
     capa = Image.new("RGBA", (W, H), (0, 0, 0, 0))
     d = ImageDraw.Draw(capa)
     marco(d, 12)
-    placa(d, (44, 140), f"#{numero:03d}", fuente(34), pad=(12, 5))
+    placa(d, (s(44), s(140)), f"#{numero:03d}", fuente(s(34)), pad=(12, 5))
     ruta = TMP / "marco.png"
     capa.save(ruta)
     return ruta
 
 
-def hacer_cierre(img_fondo, numero):
-    img = ajustar(Image.open(img_fondo)).filter(ImageFilter.GaussianBlur(18))
+def hacer_cierre(foto, numero):
+    img = cubrir(Image.open(foto)).filter(ImageFilter.GaussianBlur(s(18)))
     img = Image.alpha_composite(img.convert("RGBA"), Image.new("RGBA", (W, H), NOCHE + (215,)))
     d = ImageDraw.Draw(img)
     marco(d, 18)
-    f1, f2 = fuente(64), fuente(96)
-    for texto, f, y, color in [("SÍGUEME PARA EL", f1, 470, (255, 255, 255)), (f"{SERIE} #{numero + 1:03d}", f2, 560, None)]:
-        x = (W - d.textlength(texto, font=f)) / 2
-        if color:
-            d.text((x, y), texto, font=f, fill=color)
-        else:
-            placa(d, (x, y), texto, f, pad=(18, 8))
+    f1, f2 = fuente(s(64)), fuente(s(96))
+    t1 = "SÍGUEME PARA EL"
+    d.text(((W - d.textlength(t1, font=f1)) / 2, s(470)), t1, font=f1, fill=(255, 255, 255))
+    t2 = f"{SERIE} #{numero + 1:03d}"
+    placa(d, ((W - d.textlength(t2, font=f2)) / 2, s(560)), t2, f2, pad=(18, 8))
     if USUARIO:
-        f3 = fuente(40)
-        d.text(((W - d.textlength(USUARIO, font=f3)) / 2, 730), USUARIO, font=f3, fill=MENTA)
+        f3 = fuente(s(40))
+        d.text(((W - d.textlength(USUARIO, font=f3)) / 2, s(730)), USUARIO, font=f3, fill=MENTA)
     ruta = TMP / "cierre.png"
     img.convert("RGB").save(ruta)
     return ruta
 
 
-# ---------- 5. Voz ----------
+# ---------- 7. Voz ----------
 async def _narrar(texto, voz, mp3, rate):
     import edge_tts
     try:
@@ -340,11 +422,11 @@ def narrar(texto, rate="+6%"):
     raise SystemExit("No se pudo generar la voz")
 
 
-# ---------- 6. Subtítulos con la palabra que suena resaltada ----------
-def t_ass(s):
-    h, rest = divmod(max(s, 0), 3600)
-    m, s = divmod(rest, 60)
-    return f"{int(h)}:{int(m):02d}:{s:05.2f}"
+# ---------- 8. Subtítulos ----------
+def t_ass(x):
+    h, rest = divmod(max(x, 0), 3600)
+    m, x = divmod(rest, 60)
+    return f"{int(h)}:{int(m):02d}:{x:05.2f}"
 
 
 def subtitulos(palabras, texto, dur_voz, desde):
@@ -382,7 +464,7 @@ WrapStyle: 0
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Sub,{nombre_fuente()},84,{blanco},{blanco},{hexass(NOCHE)},&H64000000&,1,0,0,0,100,100,0,0,1,6,0,2,60,60,420,1
+Style: Sub,{nombre_fuente()},{s(84)},{blanco},{blanco},{hexass(NOCHE)},&H64000000&,1,0,0,0,100,100,0,0,1,{s(6)},0,2,{s(60)},{s(60)},{s(400)},1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
@@ -390,26 +472,22 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
     return ass
 
 
-# ---------- 7. Video ----------
-def armar_video(portada, imagenes, marco_png, cierre, mp3, ass, salida):
+# ---------- 9. Video ----------
+def armar_video(portada, cuadros_img, marco_png, cierre, mp3, ass, salida):
     dur_voz = duracion(mp3)
     total = dur_voz + CIERRE_SEG
-    historia = dur_voz - PORTADA_SEG
-    n = len(imagenes)
-    cuadros = int(round(historia / n * FPS))
-    cmd = ["ffmpeg", "-y", "-v", "error", "-stats",
-           "-loop", "1", "-t", f"{PORTADA_SEG}", "-i", str(portada)]
-    for img in imagenes:
+    n = len(cuadros_img)
+    cuadros = int(round((dur_voz - PORTADA_SEG) / n * FPS))
+    cmd = ["ffmpeg", "-y", "-v", "error", "-stats", "-loop", "1", "-t", f"{PORTADA_SEG}", "-i", str(portada)]
+    for img in cuadros_img:
         cmd += ["-i", str(img)]
-    cmd += ["-loop", "1", "-i", str(marco_png),
-            "-loop", "1", "-t", f"{CIERRE_SEG}", "-i", str(cierre),
-            "-i", str(mp3),
-            "-f", "lavfi", "-t", f"{total:.2f}", "-i", "anoisesrc=color=pink:amplitude=0.03:sample_rate=44100"]
+    cmd += ["-loop", "1", "-i", str(marco_png), "-loop", "1", "-t", f"{CIERRE_SEG}", "-i", str(cierre),
+            "-i", str(mp3), "-f", "lavfi", "-t", f"{total:.2f}", "-i", "anoisesrc=color=pink:amplitude=0.03:sample_rate=44100"]
     i_marco, i_cierre, i_voz, i_amb = n + 1, n + 2, n + 3, n + 4
     f = [f"[0:v]scale={W}:{H},setsar=1,fps={FPS},format=yuv420p[por]"]
     for i in range(n):
-        zoom = "min(zoom+0.0007,1.12)" if i % 2 == 0 else "if(eq(on,0),1.12,max(zoom-0.0007,1.0))"
-        f.append(f"[{i + 1}:v]scale={W * 2}:{H * 2}:force_original_aspect_ratio=increase,crop={W * 2}:{H * 2},"
+        zoom = "min(zoom+0.0005,1.08)" if i % 2 == 0 else "if(eq(on,0),1.08,max(zoom-0.0005,1.0))"
+        f.append(f"[{i + 1}:v]scale={int(W * 1.5)}:{int(H * 1.5)},"
                  f"zoompan=z='{zoom}':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d={cuadros}:s={W}x{H}:fps={FPS},"
                  f"setsar=1,format=yuv420p[h{i}]")
     f.append("".join(f"[h{i}]" for i in range(n)) + f"concat=n={n}:v=1:a=0[hist0]")
@@ -419,10 +497,9 @@ def armar_video(portada, imagenes, marco_png, cierre, mp3, ass, salida):
     f.append(f"[{i_voz}:a]apad=pad_dur={CIERRE_SEG},volume=1.5[voz]")
     f.append(f"[{i_amb}:a]highpass=f=200,lowpass=f=3000,volume=0.25[amb]")
     f.append("[voz][amb]amix=inputs=2:duration=first:dropout_transition=0,volume=1.6[aout]")
-    cmd += ["-filter_complex", ";".join(f), "-map", "[vout]", "-map", "[aout]",
-            "-t", f"{total:.2f}", "-r", str(FPS),
-            "-c:v", "libx264", "-preset", "veryfast", "-crf", "21", "-pix_fmt", "yuv420p",
-            "-c:a", "aac", "-b:a", "160k", "-movflags", "+faststart", str(salida)]
+    cmd += ["-filter_complex", ";".join(f), "-map", "[vout]", "-map", "[aout]", "-t", f"{total:.2f}", "-r", str(FPS),
+            "-c:v", "libx264", "-preset", "medium", "-crf", "19", "-pix_fmt", "yuv420p",
+            "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart", str(salida)]
     correr(cmd, cwd=TMP)
 
 
@@ -433,41 +510,42 @@ def main():
     hoy = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=-4))).strftime("%Y-%m-%d")
     reg = registro()
     numero = len(reg) + 1
-    categoria = escoger_categoria(numero)
+    categoria = CATEGORIAS[(numero - 1) % len(CATEGORIAS)]
 
     if PRUEBA:
-        g = {"titulo": "Prueba", "portada": "Este país no tiene mosquitos", "resaltar": "no tiene",
+        art = {"titulo": "Prueba", "url": ""}
+        g = {"titulo": "Prueba", "portada": "Este lago guarda un secreto", "resaltar": "secreto",
              "descripcion": "Prueba", "hashtags": ["#curiosidades"],
-             "narracion": ("¿Sabías que hay un país donde no vas a encontrar ni un solo mosquito? " * 12).strip(),
-             "escenas": ["a"] * 6}
-        imagenes = [imagen_de_relleno(i) for i in range(6)]
+             "narracion": ("¿Sabías que este lago es más antiguo de lo que imaginas? " * 14).strip()}
+        revisar, creditos = [], []
+        fotos = [imagen_de_relleno(i) for i in range(5)]
         mp3 = TMP / "voz.mp3"
         correr(["ffmpeg", "-y", "-v", "error", "-f", "lavfi", "-i", "sine=frequency=180:duration=62",
                 "-c:a", "libmp3lame", str(mp3)])
-        palabras, revisar = [], []
+        palabras = []
     else:
-        anteriores = [l.split("|")[3].strip() for l in reg]
-        print(f"{SERIE} #{numero:03d} · categoría: {categoria}")
-        g, revisar = verificar(pedir_guion(categoria, anteriores))
+        usados = [l.split("|")[3].strip() for l in reg]
+        print(f"{SERIE} #{numero:03d} · categoría: {categoria}", flush=True)
+        art = escoger_tema(categoria, usados)
+        g, revisar = escribir_guion(art)
         cierre_hablado = f" Sígueme para el {SERIE.lower()} número {numero + 1}."
         mp3, palabras = narrar(g["narracion"] + cierre_hablado)
-        if duracion(mp3) + CIERRE_SEG < 61.5:  # que pase del minuto
+        if duracion(mp3) + CIERRE_SEG < 61.5:
             print("Quedó corto, se narra más despacio")
             mp3, palabras = narrar(g["narracion"] + cierre_hablado, rate="-6%")
         if duracion(mp3) + CIERRE_SEG < 61.5:
-            print("Sigue corto, se pide un guion más largo")
-            g, revisar = verificar(pedir_guion(categoria, anteriores, "La narración anterior quedó corta: escribe entre 195 y 215 palabras."))
-            mp3, palabras = narrar(g["narracion"] + cierre_hablado)
-        imagenes = bajar_imagenes(g["escenas"][:6])
-        while len(imagenes) < 4:
-            imagenes.append(imagen_de_relleno(len(imagenes)))
+            raise SystemExit("La narración no llega al minuto; hoy no se hace video")
+        fotos, creditos = bajar_fotos(fotos_commons(art["titulo"], g.get("busquedas", [])))
+        if len(fotos) < 3:
+            raise SystemExit("No hay suficientes fotos reales del tema; hoy no se hace video")
 
-    portada = hacer_portada(imagenes[0], numero, g["portada"], g.get("resaltar", ""), categoria)
+    portada = hacer_portada(fotos[0], numero, g["portada"], g.get("resaltar", ""), categoria)
+    cuadros_img = [cuadro_vertical(f, i) for i, f in enumerate(fotos)]
     marco_png = hacer_marco(numero)
-    cierre = hacer_cierre(imagenes[-1], numero)
+    cierre = hacer_cierre(fotos[-1], numero)
     ass = subtitulos(palabras, g["narracion"], duracion(mp3), PORTADA_SEG)
     video = SAL / "video.mp4"
-    armar_video(portada, imagenes, marco_png, cierre, mp3, ass, video)
+    armar_video(portada, cuadros_img, marco_png, cierre, mp3, ass, video)
 
     Image.open(portada).convert("RGB").save(SAL / "portada.jpg", quality=92)
     tags = " ".join(h if h.startswith("#") else "#" + h for h in g.get("hashtags", []))
@@ -475,12 +553,14 @@ def main():
         if t not in tags:
             tags += " " + t
     (SAL / "descripcion.txt").write_text(
-        f"{SERIE} #{numero:03d} · {g['titulo']}\n\n{g.get('descripcion', '')}\n\n{tags.strip()}\n", encoding="utf-8")
+        f"{g['titulo']}\n\n{g.get('descripcion', '')}\n\nImágenes: Wikimedia Commons\n\n{tags.strip()}\n", encoding="utf-8")
     nota = ("\n\nREVISAR ANTES DE PUBLICAR: " + "; ".join(map(str, revisar))) if revisar else ""
-    (SAL / "guion.txt").write_text(g["narracion"] + nota + "\n", encoding="utf-8")
+    (SAL / "guion.txt").write_text(
+        f"{SERIE} #{numero:03d}\nFuente (solo para ti, no va en el post): {art['titulo']} — {art['url']}\n\n"
+        f"{g['narracion']}{nota}\n\nCréditos de las fotos:\n" + "\n".join(creditos) + "\n", encoding="utf-8")
     if not PRUEBA:
         with open(RAIZ / "registro.txt", "a", encoding="utf-8") as fh:
-            fh.write(f"{hoy} | #{numero:03d} | {categoria} | {g['titulo']}\n")
+            fh.write(f"{hoy} | #{numero:03d} | {categoria} | {art['titulo']}\n")
     print(f"Listo: {video} ({duracion(video):.1f} s)")
 
 
