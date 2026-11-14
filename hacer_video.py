@@ -139,7 +139,7 @@ def escoger_tema(categoria, usados):
                "datos sorprendentes y verificables, interesantes para público latino. Responde solo JSON.")
     lista = ", ".join(usados[-120:]) or "ninguno"
     usuario = (f"Categoría: {categoria}. Dame 8 títulos EXACTOS de artículos existentes en es.wikipedia.org "
-               f"(lugares, animales, objetos, fenómenos o hechos concretos, no personas vivas ni temas políticos). "
+               f"(temas CONCRETOS y específicos: un lago, un animal, un edificio, un invento, una costumbre, un fenómeno; NO países completos ni temas generales, no personas vivas ni temas políticos). "
                f"No uses ninguno de estos: {lista}.\n"
                '{"titulos": ["...", "..."]}')
     propuesta, _ = preguntar(sistema, usuario, temperatura=1.0)
@@ -217,9 +217,9 @@ def _commons(busqueda, limite=20):
     for p in sorted(paginas, key=lambda x: x.get("index", 99)):
         ii = (p.get("imageinfo") or [{}])[0]
         nombre = p.get("title", "").lower()
-        if ii.get("mime") not in ("image/jpeg", "image/png") or ii.get("width", 0) < 900 or ii.get("height", 0) < 600:
+        if ii.get("mime") != "image/jpeg" or ii.get("width", 0) < 900 or ii.get("height", 0) < 600:
             continue
-        if any(x in nombre for x in ("logo", "map", "mapa", "flag", "bandera", "escudo", "coat of arms", "diagram", "locator")):
+        if any(x in nombre for x in ("logo", "map", "mapa", "flag", "bandera", "escudo", "coat of arms", "diagram", "locator", "border", "frontera", "chart", "graph")):
             continue
         meta = ii.get("extmetadata", {})
         autor = re.sub(r"<[^>]+>", "", meta.get("Artist", {}).get("value", "")).strip()[:80]
@@ -230,7 +230,7 @@ def _commons(busqueda, limite=20):
 
 def fotos_commons(titulo, busquedas=(), solo_contar=False):
     vistas, fotos = set(), []
-    for b in [titulo, *busquedas]:
+    for b in [*busquedas, titulo]:
         try:
             for f in _commons(b):
                 if f["titulo"] not in vistas:
