@@ -1,16 +1,15 @@
 # Dato diario: 2 videos de curiosidades al día, basados en artículos reales de Wikipedia.
 # Repo público: GitHub Actions no gasta minutos del plan. Las claves van en Secrets (nadie las ve).
 # GitHub a veces atrasa o se salta los horarios, así que se intenta cada 20 minutos dentro de cada turno:
-#   turno A (mañana): desde las 11:41 AM hasta las 6:41 PM (hora RD)
-#   turno B (noche):  desde las 7:17 PM hasta las 11:57 PM (hora RD)
+#   turno A (mañana): desde las 8:07 AM hasta las 6:47 PM (hora RD)
+#   turno B (noche):  desde las 7:07 PM hasta las 11:47 PM (hora RD)
 # El primer intento que corre hace el video; los demás ven que ya está hecho y terminan en segundos.
 name: Video diario
 on:
   schedule:
-    - cron: "41 15 * * *"
-    - cron: "1,21,41 16-22 * * *"
-    - cron: "17,37,57 23 * * *"
-    - cron: "17,37,57 0-3 * * *"
+    - cron: "7,27,47 12-22 * * *"
+    - cron: "7,27,47 23 * * *"
+    - cron: "7,27,47 0-3 * * *"
   workflow_dispatch:
 permissions:
   contents: write
@@ -30,7 +29,7 @@ jobs:
           import datetime, os, pathlib
           ahora = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=-4)))
           h = ahora.hour
-          if 11 <= h < 19:
+          if 8 <= h < 19:
               turno, fecha = "A", ahora.date()
           elif h >= 19:
               turno, fecha = "B", ahora.date()
