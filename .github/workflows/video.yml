@@ -28,7 +28,9 @@ jobs:
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           USUARIO_TIKTOK: ${{ vars.USUARIO_TIKTOK }}
-        run: python3 hacer_video.py
+        run: |
+          python3 hacer_video.py
+          echo "===== GUION ====="; cat salida/guion.txt; echo "===== DESCRIPCION ====="; cat salida/descripcion.txt
       - name: Dejar el video en "Último video"
         env:
           GH_TOKEN: ${{ github.token }}
