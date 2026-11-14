@@ -170,6 +170,7 @@ Elige lo más sorprendente del artículo.
 NARRACIÓN: entre 175 y 200 palabras (más de un minuto). Cuéntalo como se lo contarías a un amigo: usa "tú", frases de máximo 15 palabras,
 preguntas retóricas y expresiones naturales ("imagínate", "y aquí viene lo bueno", "lo más loco es que..."). Español neutro con calidez caribeña.
 No uses nombres científicos en latín ni listas largas de cosas; escoge lo más impresionante y explícalo bien.
+Escribe las unidades y símbolos en palabras ("kilómetros por hora", "grados", "por ciento"), nunca abreviados, y las cifras grandes redondeadas en palabras ("más de tres millones").
 1) Primera frase: gancho fuerte de máximo 12 palabras.
 2) 2 o 3 datos interesantes del artículo, con el porqué.
 3) Termina con una pregunta para que comenten. NO pidas que te sigan.
@@ -417,6 +418,31 @@ def hacer_cierre(foto, numero):
 
 
 # ---------- 7. Voz ----------
+UNIDADES = [
+    (r"(\d)\s*k(?:m|lm)\s*/\s*h\b", r"\1 kilómetros por hora"), (r"\bk(?:m|lm)\s*/\s*h\b", "kilómetros por hora"),
+    (r"(\d)\s*kWh\s*/\s*m²", r"\1 kilovatios hora por metro cuadrado"), (r"(\d)\s*kWh\b", r"\1 kilovatios hora"),
+    (r"(\d)\s*km\s*/\s*s\b", r"\1 kilómetros por segundo"), (r"(\d)\s*m\s*/\s*s\b", r"\1 metros por segundo"),
+    (r"(\d)\s*km²", r"\1 kilómetros cuadrados"), (r"(\d)\s*m²", r"\1 metros cuadrados"), (r"(\d)\s*m³", r"\1 metros cúbicos"),
+    (r"(\d)\s*k(?:m|lm)\b", r"\1 kilómetros"), (r"(\d)\s*kg\b", r"\1 kilos"), (r"(\d)\s*cm\b", r"\1 centímetros"),
+    (r"(\d)\s*mm\b", r"\1 milímetros"), (r"(\d)\s*m\b", r"\1 metros"), (r"(\d)\s*g\b", r"\1 gramos"),
+    (r"(\d)\s*mph\b", r"\1 millas por hora"), (r"(\d)\s*°\s*[CF]\b", r"\1 grados"), (r"(\d)\s*°", r"\1 grados"),
+    (r"(\d)\s*%", r"\1 por ciento"), (r"\ba\.\s?C\.", "antes de Cristo"), (r"\bd\.\s?C\.", "después de Cristo"),
+    (r"\baprox\.", "aproximadamente"), (r"\bkm\b", "kilómetros"),
+]
+
+
+def para_hablar(texto):
+    """Convierte abreviaturas y números raros en palabras para que la voz no lea letra por letra."""
+    t = texto
+    for _ in range(3):  # 3 600 000 -> 3600000
+        t = re.sub(r"(\d)[ \u00a0\u202f.](?=\d{3}(?!\d))", r"\1", t)
+    t = re.sub(r"(?<![\w-])-(\d)", r"menos \1", t)
+    for patron, cambio in UNIDADES:
+        t = re.sub(patron, cambio, t)
+    t = t.replace("‑", "-").replace("–", ", ").replace("—", ", ")
+    return t
+
+
 async def _narrar(texto, voz, mp3, rate):
     import edge_tts
     try:
@@ -434,7 +460,7 @@ async def _narrar(texto, voz, mp3, rate):
     return palabras
 
 
-def narrar(texto, rate="+6%"):
+def narrar(texto, rate="+2%"):
     mp3 = TMP / "voz.mp3"
     for voz in VOCES:
         try:
@@ -554,10 +580,11 @@ def main():
         art = escoger_tema(categoria, usados)
         g, revisar = escribir_guion(art)
         cierre_hablado = f" Sígueme para el {SERIE.lower()} número {numero + 1}."
-        mp3, palabras = narrar(g["narracion"] + cierre_hablado)
+        hablado = para_hablar(g["narracion"]) + cierre_hablado
+        mp3, palabras = narrar(hablado)
         if duracion(mp3) + CIERRE_SEG < 61.5:
             print("Quedó corto, se narra más despacio")
-            mp3, palabras = narrar(g["narracion"] + cierre_hablado, rate="-6%")
+            mp3, palabras = narrar(hablado, rate="-6%")
         if duracion(mp3) + CIERRE_SEG < 61.5:
             raise SystemExit("La narración no llega al minuto; hoy no se hace video")
         fotos, creditos = bajar_fotos(fotos_commons(art["titulo"], g.get("busquedas", [])))
