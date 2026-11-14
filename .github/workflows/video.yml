@@ -1,10 +1,10 @@
-# Dato diario: un video de curiosidades cada mañana, estilo menta y noche.
-# Repo público: GitHub Actions no gasta minutos del plan.
-# Último video: https://github.com/Cheloelmele17/historias-rd/releases/tag/ultimo
+# Dato diario: 2 videos de curiosidades al día, basados en artículos reales de Wikipedia.
+# Repo público: GitHub Actions no gasta minutos del plan. Las claves van en Secrets (nadie las ve).
 name: Video diario
 on:
   schedule:
-    - cron: "37 9 * * *"   # 5:37 AM RD
+    - cron: "41 15 * * *"   # 11:41 AM RD
+    - cron: "17 23 * * *"   # 7:17 PM RD
   workflow_dispatch:
 permissions:
   contents: write
@@ -24,6 +24,8 @@ jobs:
           curl -sSL -o fuentes/Poppins-ExtraBold.ttf https://github.com/google/fonts/raw/main/ofl/poppins/Poppins-ExtraBold.ttf
       - name: Hacer el video
         env:
+          PYTHONUNBUFFERED: "1"
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           USUARIO_TIKTOK: ${{ vars.USUARIO_TIKTOK }}
         run: python3 hacer_video.py
