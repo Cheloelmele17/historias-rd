@@ -96,8 +96,10 @@ def proveedores():
             ids = []
         preferidos = ["openai/gpt-oss-120b", "llama-3.3-70b-versatile", "moonshotai/kimi-k2-instruct",
                       "meta-llama/llama-4-maverick-17b-128e-instruct", "qwen/qwen3-32b"]
-        elegidos = [m for m in preferidos if m in ids] or preferidos[:2]
-        for m in elegidos[:3]:
+        elegidos = [m for m in preferidos if m in ids]
+        elegidos += [m for m in ids if m not in elegidos and any(k in m for k in ("gpt-oss", "llama-3", "llama-4", "qwen", "kimi"))
+                     and not any(k in m for k in ("guard", "whisper", "tts", "prompt"))]
+        for m in (elegidos or preferidos[:2])[:4]:
             yield (f"groq:{m}", "https://api.groq.com/openai/v1/chat/completions", m, clave)
     clave = os.environ.get("GEMINI_API_KEY", "").strip()
     if clave:
@@ -109,8 +111,10 @@ def preguntar(sistema, usuario, temperatura=0.7):
     ultimo = None
     for intento in range(4):
         for nombre, url, modelo, clave in proveedores():
-            cuerpo = {"model": modelo, "temperature": temperatura, "response_format": {"type": "json_object"},
+            cuerpo = {"model": modelo, "temperature": temperatura,
                       "messages": [{"role": "system", "content": sistema}, {"role": "user", "content": usuario}]}
+            if intento % 2 == 0:  # a veces el modo JSON estricto falla; en los reintentos se pide sin él
+                cuerpo["response_format"] = {"type": "json_object"}
             try:
                 r = bajar_json(url, headers={"Authorization": f"Bearer {clave}", "Content-Type": "application/json"},
                                data=json.dumps(cuerpo).encode(), timeout=180)
