@@ -167,7 +167,9 @@ SISTEMA_GUION = """Eres guionista de un canal de TikTok de curiosidades para pú
 Te doy el texto de un artículo de Wikipedia. Escribe el guion USANDO SOLO información que está en ese texto.
 Prohibido agregar datos, cifras, récords, comparaciones o lugares que no aparezcan en el artículo. No mezcles otros países ni otros temas.
 Elige lo más sorprendente del artículo.
-NARRACIÓN: entre 175 y 200 palabras (más de un minuto), español neutro con calidez caribeña, frases cortas.
+NARRACIÓN: entre 175 y 200 palabras (más de un minuto). Cuéntalo como se lo contarías a un amigo: usa "tú", frases de máximo 15 palabras,
+preguntas retóricas y expresiones naturales ("imagínate", "y aquí viene lo bueno", "lo más loco es que..."). Español neutro con calidez caribeña.
+No uses nombres científicos en latín ni listas largas de cosas; escoge lo más impresionante y explícalo bien.
 1) Primera frase: gancho fuerte de máximo 12 palabras.
 2) 2 o 3 datos interesantes del artículo, con el porqué.
 3) Termina con una pregunta para que comenten. NO pidas que te sigan.
@@ -178,7 +180,8 @@ Responde SOLO JSON: {"titulo": "...", "portada": "...", "resaltar": "...", "narr
 
 SISTEMA_VERIFICAR = """Eres verificador de datos muy estricto. Te doy un ARTÍCULO de Wikipedia y un GUION.
 Revisa cada afirmación del guion: debe estar respaldada por el artículo. Lo que no esté en el artículo, o lo contradiga, es un problema.
-Si hay problemas, reescribe la narración (175 a 200 palabras, mismo estilo) usando solo lo que dice el artículo, y corrige titulo/portada/resaltar si hace falta.
+Si hay problemas, corrige SOLO las frases con problemas y deja todo lo demás igual: mismo tono de conversación con "tú", mismo gancho inicial,
+misma pregunta final para comentar, entre 175 y 200 palabras. No lo conviertas en texto de enciclopedia ni en una lista. Corrige titulo/portada/resaltar si hace falta.
 Responde SOLO JSON: {"ok": true o false, "problemas": ["..."], "titulo": "...", "portada": "...", "resaltar": "...", "narracion": "..."}"""
 
 
