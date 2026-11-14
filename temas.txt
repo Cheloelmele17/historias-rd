@@ -1,0 +1,26 @@
+# Un tema por línea. El programa toma el primero que no se haya usado (ver registro.txt).
+# "Leyenda:" = se cuenta como la cuentan los viejos. "Historia original:" = la IA inventa una historia nueva.
+Leyenda: La Ciguapa, la mujer de los pies al revés que vive en los montes
+Historia original: un motoconchista recoge a una pasajera de madrugada en una carretera de campo
+Leyenda: El Bacá, el animal que se consigue con un pacto para tener riquezas
+Historia original: el velorio en el campo donde había una persona de más
+Leyenda: Los Galipotes, gente que se convierte en animal de noche
+Historia original: la casa vieja de la abuela donde el radio se prendía solo
+Leyenda: Las botijas, los tesoros enterrados que se aparecen en sueños
+Historia original: la guagua de la última ruta que nadie más vio pasar
+Leyenda: Las brujas que se quitan la piel y salen volando de noche
+Historia original: el pozo de la finca del abuelo
+Leyenda: Los Biembienes, la gente salvaje de las lomas
+Historia original: la llamada a las 3:00 de la madrugada desde el número de un difunto
+Leyenda: El Cuco, el que se lleva a los muchachos que no obedecen
+Historia original: la luz que se mueve sola en el cañaveral
+Leyenda: El Comegente, el hombre que aterrorizó los campos en tiempos de la colonia
+Historia original: el niño que hablaba con alguien en el patio
+Leyenda: Las ánimas en pena que piden rezos en los caminos
+Historia original: el colmado de campo que abría solo de madrugada
+Leyenda: La mujer de blanco que se aparece en los puentes
+Historia original: el espejo de la abuela que nadie quería tapar
+Leyenda: Los indios de agua que viven en los charcos y los ríos
+Historia original: el guardián del cementerio del pueblo
+Leyenda: El fukú, la mala suerte que persigue a quien nombra lo que no debe
+Historia original: el burro que no quería pasar por el mismo camino de noche
