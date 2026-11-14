@@ -58,7 +58,8 @@ jobs:
           desc = pathlib.Path("salida/descripcion.txt")
           if os.environ["ESTADO"] == "success" and desc.exists():
               msg = {"title": "Video listo para TikTok", "message": desc.read_text(encoding="utf-8")[:3500],
-                     "click": base + "/tag/ultimo", "attach": base + "/download/ultimo/portada.jpg",
+                     "click": base + "/download/ultimo/video.mp4", "attach": base + "/download/ultimo/portada.jpg",
+                     "actions": [{"action": "view", "label": "Descargar video", "url": base + "/download/ultimo/video.mp4"}],
                      "filename": "portada.jpg", "tags": ["movie_camera"]}
           else:
               msg = {"title": "Este turno no salió video", "tags": ["warning"],
