@@ -558,7 +558,7 @@ def main():
     SAL.mkdir(exist_ok=True)
     TMP.mkdir(parents=True, exist_ok=True)
     (RAIZ / "fuentes").mkdir(exist_ok=True)
-    hoy = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=-4))).strftime("%Y-%m-%d")
+    hoy = os.environ.get("FECHA_TURNO") or datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=-4))).strftime("%Y-%m-%d")
     reg = registro()
     numero = len(reg) + 1
     categoria = CATEGORIAS[(numero - 1) % len(CATEGORIAS)]
@@ -612,7 +612,7 @@ def main():
         f"{g['narracion']}{nota}\n\nCréditos de las fotos:\n" + "\n".join(creditos) + "\n", encoding="utf-8")
     if not PRUEBA:
         with open(RAIZ / "registro.txt", "a", encoding="utf-8") as fh:
-            fh.write(f"{hoy} | #{numero:03d} | {categoria} | {art['titulo']}\n")
+            fh.write(f"{hoy} | #{numero:03d} | {categoria} | {art['titulo']} | {os.environ.get('TURNO', 'M')}\n")
     print(f"Listo: {video} ({duracion(video):.1f} s)")
 
 
