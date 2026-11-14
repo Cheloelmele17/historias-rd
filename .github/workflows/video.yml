@@ -1,10 +1,16 @@
 # Dato diario: 2 videos de curiosidades al día, basados en artículos reales de Wikipedia.
 # Repo público: GitHub Actions no gasta minutos del plan. Las claves van en Secrets (nadie las ve).
+# GitHub a veces atrasa o se salta los horarios, así que se intenta cada 20 minutos dentro de cada turno:
+#   turno A (mañana): desde las 11:41 AM hasta las 6:41 PM (hora RD)
+#   turno B (noche):  desde las 7:17 PM hasta las 11:57 PM (hora RD)
+# El primer intento que corre hace el video; los demás ven que ya está hecho y terminan en segundos.
 name: Video diario
 on:
   schedule:
-    - cron: "41 15 * * *"   # 11:41 AM RD
-    - cron: "17 23 * * *"   # 7:17 PM RD
+    - cron: "41 15 * * *"
+    - cron: "1,21,41 16-22 * * *"
+    - cron: "17,37,57 23 * * *"
+    - cron: "17,37,57 0-3 * * *"
   workflow_dispatch:
 permissions:
   contents: write
@@ -15,7 +21,38 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
+      - name: ¿Toca hacer video?
+        id: toca
+        env:
+          EVENTO: ${{ github.event_name }}
+        run: |
+          python3 - <<'PY'
+          import datetime, os, pathlib
+          ahora = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=-4)))
+          h = ahora.hour
+          if 11 <= h < 19:
+              turno, fecha = "A", ahora.date()
+          elif h >= 19:
+              turno, fecha = "B", ahora.date()
+          elif h < 4:
+              turno, fecha = "B", (ahora - datetime.timedelta(days=1)).date()
+          else:
+              turno, fecha = "", ahora.date()
+          hecho = False
+          reg = pathlib.Path("registro.txt")
+          if reg.exists() and turno:
+              for l in reg.read_text(encoding="utf-8").splitlines():
+                  p = [x.strip() for x in l.split("|")]
+                  if len(p) >= 5 and p[0] == str(fecha) and p[4] == turno:
+                      hecho = True
+          manual = os.environ["EVENTO"] == "workflow_dispatch"
+          si = manual or (bool(turno) and not hecho)
+          print(f"turno={turno or '-'} fecha={fecha} ya_hecho={hecho} manual={manual} -> {'HACER VIDEO' if si else 'no toca'}")
+          with open(os.environ["GITHUB_OUTPUT"], "a") as f:
+              f.write(f"si={'true' if si else 'false'}\nturno={turno or 'M'}\nfecha={fecha}\n")
+          PY
       - name: Instalar ffmpeg, voz y letra
+        if: steps.toca.outputs.si == 'true'
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y -qq ffmpeg > /dev/null
@@ -23,15 +60,19 @@ jobs:
           mkdir -p fuentes
           curl -sSL -o fuentes/Poppins-ExtraBold.ttf https://github.com/google/fonts/raw/main/ofl/poppins/Poppins-ExtraBold.ttf
       - name: Hacer el video
+        if: steps.toca.outputs.si == 'true'
         env:
           PYTHONUNBUFFERED: "1"
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           USUARIO_TIKTOK: ${{ vars.USUARIO_TIKTOK }}
+          TURNO: ${{ steps.toca.outputs.turno }}
+          FECHA_TURNO: ${{ steps.toca.outputs.fecha }}
         run: |
           python3 hacer_video.py
           echo "===== GUION ====="; cat salida/guion.txt; echo "===== DESCRIPCION ====="; cat salida/descripcion.txt
       - name: Dejar el video en "Último video"
+        if: steps.toca.outputs.si == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -39,14 +80,16 @@ jobs:
           gh release create ultimo salida/video.mp4 salida/portada.jpg salida/descripcion.txt salida/guion.txt \
             --title "$(head -1 salida/descripcion.txt)" --notes-file salida/descripcion.txt --latest
       - name: Anotar el dato publicado
+        if: steps.toca.outputs.si == 'true'
         run: |
           git config user.name "robot-dato"
           git config user.email "robot-dato@users.noreply.github.com"
           git add registro.txt
           git commit -m "Dato del $(date -u +%Y-%m-%d)" || echo "sin cambios"
+          git pull --rebase -q || true
           git push
       - name: Avisar al celular (ntfy)
-        if: always()
+        if: always() && steps.toca.outputs.si == 'true'
         env:
           NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
           ESTADO: ${{ job.status }}
@@ -62,8 +105,8 @@ jobs:
                      "actions": [{"action": "view", "label": "Descargar video", "url": base + "/download/ultimo/video.mp4"}],
                      "filename": "portada.jpg", "tags": ["movie_camera"]}
           else:
-              msg = {"title": "Este turno no salió video", "tags": ["warning"],
-                     "message": "El robot no pudo hacer el video (no pasó la revisión de datos o falló algo). El próximo turno lo intenta de nuevo.",
+              msg = {"title": "Este intento no salió", "tags": ["warning"],
+                     "message": "El robot no pudo hacer el video (no pasó la revisión de datos o falló algo). En 20 minutos lo intenta de nuevo.",
                      "click": "https://github.com/Cheloelmele17/historias-rd/actions"}
           msg["topic"] = os.environ["NTFY_TOPIC"]
           req = urllib.request.Request("https://ntfy.sh", data=json.dumps(msg).encode(), headers={"Content-Type": "application/json"})
