@@ -11,6 +11,10 @@ on:
     - cron: "7,27,47 23 * * *"
     - cron: "7,27,47 0-3 * * *"
   workflow_dispatch:
+    inputs:
+      programado:
+        description: "si = lo dispara el reloj de cron-job.org (solo hace video si toca)"
+        default: "no"
 permissions:
   contents: write
 concurrency: video
@@ -24,6 +28,7 @@ jobs:
         id: toca
         env:
           EVENTO: ${{ github.event_name }}
+          PROGRAMADO: ${{ inputs.programado }}
         run: |
           python3 - <<'PY'
           import datetime, os, pathlib
@@ -44,7 +49,7 @@ jobs:
                   p = [x.strip() for x in l.split("|")]
                   if len(p) >= 5 and p[0] == str(fecha) and p[4] == turno:
                       hecho = True
-          manual = os.environ["EVENTO"] == "workflow_dispatch"
+          manual = os.environ["EVENTO"] == "workflow_dispatch" and os.environ.get("PROGRAMADO", "no") != "si"
           si = manual or (bool(turno) and not hecho)
           print(f"turno={turno or '-'} fecha={fecha} ya_hecho={hecho} manual={manual} -> {'HACER VIDEO' if si else 'no toca'}")
           with open(os.environ["GITHUB_OUTPUT"], "a") as f:
