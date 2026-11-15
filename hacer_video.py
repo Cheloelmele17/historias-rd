@@ -186,8 +186,7 @@ No investment or financial advice, only facts and history.
 COVER ("portada"): headline of 3 to 6 words, and "resaltar": 1 or 2 words exactly as they appear in the headline.
 BUSQUEDAS: 3 short English phrases to search real photos of the topic (e.g. "Lake Baikal winter ice").
 DATO_CORTO: the single most surprising sentence of the narration, copied EXACTLY word for word from it (max 25 words, not the question).
-TRADUCCION_ES: a Spanish translation of the narration (only for the channel owner, it is not published).
-Reply ONLY JSON: {"titulo": "...", "portada": "...", "resaltar": "...", "narracion": "...", "descripcion": "one line for the post", "hashtags": ["#facts", "..."], "busquedas": ["...", "...", "..."], "dato_corto": "...", "traduccion_es": "..."}"""
+Reply ONLY JSON: {"titulo": "...", "portada": "...", "resaltar": "...", "narracion": "...", "descripcion": "one line for the post", "hashtags": ["#facts", "..."], "busquedas": ["...", "...", "..."], "dato_corto": "..."}"""
 
 SISTEMA_VERIFICAR = """You are a very strict fact-checker. I give you a Wikipedia ARTICLE and a SCRIPT.
 Go sentence by sentence. For every fact, number, name, date and comparison in the script, find the exact words in the article that support it
@@ -647,6 +646,12 @@ def main():
         print(f"{SERIE} #{numero:03d} · categoría: {categoria}", flush=True)
         art = escoger_tema(categoria, usados)
         g, revisar = escribir_guion(art)
+        try:  # traducción solo para el dueño; si falla, no pasa nada
+            tr, _ = preguntar("Translate the user's text into natural Spanish. Reply only JSON: {\"es\": \"...\"}",
+                              g["narracion"], temperatura=0.2)
+            g["traduccion_es"] = str(tr.get("es", "")).translate(RAROS)
+        except BaseException as e:
+            print(f"  sin traducción: {e}")
         cierre_hablado = f" Follow for {SERIE.lower()} number {numero + 1}."
         hablado = para_hablar(g["narracion"]) + cierre_hablado
         mp3, palabras = narrar(hablado)
