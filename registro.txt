@@ -7,3 +7,4 @@
 2026-11-14 | #006 | ECONOMICS | Euronext Amsterdam | B
 2026-11-15 | #007 | SCIENCE | Velcro | A
 2026-11-15 | #008 | ENGINEERING | Bessemer process | A
+2026-11-15 | #009 | HUMAN BODY | Electrocardiography | B
