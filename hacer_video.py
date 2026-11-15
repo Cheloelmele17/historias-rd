@@ -174,11 +174,11 @@ def escoger_tema(categoria, usados):
 SISTEMA_GUION = """You write scripts for a TikTok/Facebook Reels channel of surprising facts for an American audience.
 I give you the text of a Wikipedia article. Write the script USING ONLY information that is in that text.
 Never add facts, numbers, records, comparisons or places that are not in the article. Do not mix in other topics.
-Pick the most surprising things in the article.
+Pick the most surprising things in the article. Every sentence must be something the article literally says; no filler claims, no exaggeration.
 NARRATION: 170 to 195 words (a bit over one minute). Tell it like you would tell a friend: talk to "you", sentences of 15 words max,
 rhetorical questions and natural spoken expressions ("picture this", "here's the crazy part", "and it gets weirder"). Casual American English.
 No Latin scientific names, no long lists; choose the most impressive facts and explain why they matter.
-Write units and symbols as words ("miles per hour", "degrees", "percent"), never abbreviated; round big numbers in words ("over three million").
+Copy every number, name and date EXACTLY as the article writes it, in digits (e.g. "Boeing 747", "1998", "28,000"). Never convert, estimate or invent comparisons.
 No investment or financial advice, only facts and history.
 1) First sentence: a strong hook of 12 words max.
 2) 2 or 3 interesting facts from the article, with the why.
@@ -189,19 +189,21 @@ TRADUCCION_ES: a Spanish translation of the narration (only for the channel owne
 Reply ONLY JSON: {"titulo": "...", "portada": "...", "resaltar": "...", "narracion": "...", "descripcion": "one line for the post", "hashtags": ["#facts", "..."], "busquedas": ["...", "...", "..."], "traduccion_es": "..."}"""
 
 SISTEMA_VERIFICAR = """You are a very strict fact-checker. I give you a Wikipedia ARTICLE and a SCRIPT.
-Check every claim in the script: it must be supported by the article. Anything not in the article, or contradicting it, is a problem.
+Go sentence by sentence. For every fact, number, name, date and comparison in the script, find the exact words in the article that support it
+and put them in "evidencias" (short quotes). Any number that does not appear in the article with the same value, any comparison or
+claim without an exact supporting quote, or anything exaggerated, is a problem: then "ok" must be false.
 If there are problems, fix ONLY the sentences with problems and keep everything else the same: same friendly "you" tone, same opening hook,
 same final question for comments (it must ALWAYS be the last sentence, nothing after it), 170 to 195 words. Do not turn it into an encyclopedia text or a list. Fix titulo/portada/resaltar if needed.
-Reply ONLY JSON: {"ok": true or false, "problemas": ["..."], "titulo": "...", "portada": "...", "resaltar": "...", "narracion": "..."}"""
+Reply ONLY JSON: {"evidencias": ["..."], "ok": true or false, "problemas": ["..."], "titulo": "...", "portada": "...", "resaltar": "...", "narracion": "..."}"""
 
 
 def escribir_guion(art, extra=""):
     usuario = f"ARTICLE: {art['titulo']}\n\n{art['texto'][:6000]}\n\n{extra}"
-    g, quien = preguntar(SISTEMA_GUION, usuario)
+    g, quien = preguntar(SISTEMA_GUION, usuario, temperatura=0.5)
     if len(str(g.get("narracion", "")).split()) < 140 or not g.get("portada"):
         raise SystemExit(f"Guion incompleto de {quien}")
     print(f"Guion ({quien}): {g['titulo']} ({len(g['narracion'].split())} palabras)")
-    for ronda in range(2):
+    for ronda in range(3):
         v, quien = preguntar(SISTEMA_VERIFICAR, f"ARTICLE:\n{art['texto'][:6000]}\n\nSCRIPT:\n"
                              + json.dumps({k: g.get(k) for k in ("titulo", "portada", "resaltar", "narracion")},
                                           ensure_ascii=False), temperatura=0.2)
