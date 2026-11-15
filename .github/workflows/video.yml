@@ -92,11 +92,55 @@ jobs:
           git commit -m "Dato del $(date -u +%Y-%m-%d)" || echo "sin cambios"
           git pull --rebase -q || true
           git push
+      - name: Publicar en Facebook (Daily Fact Drop)
+        id: fb
+        if: steps.toca.outputs.si == 'true'
+        continue-on-error: true
+        env:
+          FB_PAGE_TOKEN: ${{ secrets.FB_PAGE_TOKEN }}
+          FB_PAGE_ID: "1469691522893283"
+        run: |
+          [ -n "$FB_PAGE_TOKEN" ] || { echo "sin clave de Facebook"; exit 0; }
+          python3 - <<'PY'
+          import json, os, pathlib, time, urllib.error, urllib.parse, urllib.request
+          tok, page = os.environ["FB_PAGE_TOKEN"], os.environ["FB_PAGE_ID"]
+          api = "https://graph.facebook.com/v21.0"
+          def llamar(url, data=None, body=None, headers=None):
+              if data is not None:
+                  body = urllib.parse.urlencode(data).encode()
+              req = urllib.request.Request(url, data=body, headers=headers or {}, method="POST" if body else "GET")
+              try:
+                  with urllib.request.urlopen(req, timeout=300) as r:
+                      return json.loads(r.read())
+              except urllib.error.HTTPError as e:
+                  raise SystemExit(f"Facebook dio error {e.code}: {e.read()[:600]!r}")
+          video = pathlib.Path("salida/video.mp4").read_bytes()
+          texto = pathlib.Path("salida/descripcion.txt").read_text(encoding="utf-8").strip()
+          ini = llamar(f"{api}/{page}/video_reels", {"upload_phase": "start", "access_token": tok})
+          vid = ini["video_id"]
+          llamar(ini.get("upload_url") or f"https://rupload.facebook.com/video-upload/v21.0/{vid}", body=video,
+                 headers={"Authorization": f"OAuth {tok}", "offset": "0", "file_size": str(len(video))})
+          print("Video subido a Facebook:", vid)
+          fin = llamar(f"{api}/{page}/video_reels", {"upload_phase": "finish", "video_id": vid, "video_state": "PUBLISHED",
+                                                     "description": texto, "access_token": tok})
+          print("Respuesta de Facebook:", fin)
+          estado = {}
+          for _ in range(24):
+              time.sleep(15)
+              estado = llamar(f"{api}/{vid}?fields=status&access_token={tok}").get("status", {})
+              print("Estado:", estado.get("video_status"), estado.get("publishing_phase", {}).get("status"))
+              if estado.get("video_status") in ("ready", "error"):
+                  break
+          if estado.get("video_status") == "error":
+              raise SystemExit(f"Facebook rechazó el video: {estado}")
+          print("Reel publicado en Daily Fact Drop")
+          PY
       - name: Avisar al celular (ntfy)
         if: always() && steps.toca.outputs.si == 'true'
         env:
           NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
           ESTADO: ${{ job.status }}
+          FB: ${{ steps.fb.outcome }}
         run: |
           [ -n "$NTFY_TOPIC" ] || exit 0
           python3 - <<'PY'
@@ -104,7 +148,8 @@ jobs:
           base = "https://github.com/Cheloelmele17/historias-rd/releases"
           desc = pathlib.Path("salida/descripcion.txt")
           if os.environ["ESTADO"] == "success" and desc.exists():
-              msg = {"title": "Video listo para TikTok", "message": desc.read_text(encoding="utf-8")[:3500],
+              fb = {"success": "\n\n✅ Ya se publicó solo en Facebook.", "failure": "\n\n⚠️ No se pudo publicar en Facebook."}.get(os.environ.get("FB", ""), "")
+              msg = {"title": "Video listo para TikTok", "message": desc.read_text(encoding="utf-8")[:3400] + fb,
                      "click": base + "/download/ultimo/video.mp4", "attach": base + "/download/ultimo/portada.jpg",
                      "actions": [{"action": "view", "label": "Descargar video", "url": base + "/download/ultimo/video.mp4"}],
                      "filename": "portada.jpg", "tags": ["movie_camera"]}
