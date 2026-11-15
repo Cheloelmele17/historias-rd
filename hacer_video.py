@@ -185,8 +185,9 @@ No investment or financial advice, only facts and history.
 3) The LAST sentence must be a question so people comment; nothing after it. Do NOT ask people to follow.
 COVER ("portada"): headline of 3 to 6 words, and "resaltar": 1 or 2 words exactly as they appear in the headline.
 BUSQUEDAS: 3 short English phrases to search real photos of the topic (e.g. "Lake Baikal winter ice").
+DATO_CORTO: the single most surprising sentence of the narration, copied EXACTLY word for word from it (max 25 words, not the question).
 TRADUCCION_ES: a Spanish translation of the narration (only for the channel owner, it is not published).
-Reply ONLY JSON: {"titulo": "...", "portada": "...", "resaltar": "...", "narracion": "...", "descripcion": "one line for the post", "hashtags": ["#facts", "..."], "busquedas": ["...", "...", "..."], "traduccion_es": "..."}"""
+Reply ONLY JSON: {"titulo": "...", "portada": "...", "resaltar": "...", "narracion": "...", "descripcion": "one line for the post", "hashtags": ["#facts", "..."], "busquedas": ["...", "...", "..."], "dato_corto": "...", "traduccion_es": "..."}"""
 
 SISTEMA_VERIFICAR = """You are a very strict fact-checker. I give you a Wikipedia ARTICLE and a SCRIPT.
 Go sentence by sentence. For every fact, number, name, date and comparison in the script, find the exact words in the article that support it
@@ -195,6 +196,17 @@ claim without an exact supporting quote, or anything exaggerated, is a problem: 
 If there are problems, fix ONLY the sentences with problems and keep everything else the same: same friendly "you" tone, same opening hook,
 same final question for comments (it must ALWAYS be the last sentence, nothing after it), 170 to 195 words. Do not turn it into an encyclopedia text or a list. Fix titulo/portada/resaltar if needed.
 Reply ONLY JSON: {"evidencias": ["..."], "ok": true or false, "problemas": ["..."], "titulo": "...", "portada": "...", "resaltar": "...", "narracion": "..."}"""
+
+
+RAROS = str.maketrans({"\u2011": "-", "\u2010": "-", "\u00a0": " ", "\u202f": " ", "\u2009": " ", "\u200b": ""})
+
+
+def limpiar(g):
+    """Quita caracteres raros (guion no separable, espacios finos) que la letra no tiene y salen como cuadritos."""
+    for k in ("titulo", "portada", "resaltar", "narracion", "descripcion", "dato_corto", "traduccion_es"):
+        if isinstance(g.get(k), str):
+            g[k] = g[k].translate(RAROS)
+    return g
 
 
 def escribir_guion(art, extra=""):
@@ -209,7 +221,7 @@ def escribir_guion(art, extra=""):
                                           ensure_ascii=False), temperatura=0.2)
         if v.get("ok") is True or not v.get("problemas"):
             print(f"Verificación ({quien}): todo respaldado por el artículo")
-            return g, []
+            return limpiar(g), []
         print(f"Verificación ({quien}) corrigió: {v['problemas']}")
         if len(str(v.get("narracion", "")).split()) < 140:
             break
@@ -506,7 +518,7 @@ def subtitulos(palabras, texto, dur_voz, desde):
                 continue
             partes = []
             for k, (_, _, w) in enumerate(tr):
-                w = w.upper().replace("{", "(").replace("}", ")")
+                w = w.translate(RAROS).upper().replace("{", "(").replace("}", ")")
                 partes.append(f"{{\\c{menta}}}{w}{{\\c{blanco}}}" if k == j else w)
             lineas.append(f"Dialogue: 0,{t_ass(max(ini, desde))},{t_ass(fin)},Sub,,0,0,0,,{' '.join(partes)}")
     ass = TMP / "subs.ass"
@@ -555,6 +567,59 @@ def armar_video(portada, cuadros_img, marco_png, cierre, mp3, ass, salida):
             "-c:v", "libx264", "-preset", "medium", "-crf", "19", "-pix_fmt", "yuv420p",
             "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart", str(salida)]
     correr(cmd, cwd=TMP)
+
+
+# ---------- 10. Foto para Facebook (tarjeta con un dato del guion ya verificado) ----------
+def _frases(texto):
+    return [f.strip() for f in re.split(r"(?<=[.!?])\s+", texto.strip()) if f.strip()]
+
+
+def elegir_dato_corto(g):
+    """El dato de la foto SIEMPRE sale tal cual de la narración verificada."""
+    narr = g["narracion"]
+    frases = _frases(narr)
+    norm = lambda x: re.sub(r"\W+", " ", x).strip().lower()
+    cand = str(g.get("dato_corto", "")).strip()
+    if cand and not cand.endswith("?") and norm(cand) and norm(cand) in norm(narr) and 6 <= len(cand.split()) <= 30:
+        return cand
+    medio = [f for f in frases[1:-1] if not f.endswith("?") and 8 <= len(f.split()) <= 28]
+    con_numero = [f for f in medio if re.search(r"\d", f)]
+    return (con_numero or medio or frases[:1])[0]
+
+
+def hacer_tarjeta(foto, dato, numero, categoria):
+    TW, TH = 1080, 1350
+    img = Image.new("RGB", (TW, TH), NOCHE)
+    f0 = ImageOps.exif_transpose(Image.open(foto)).convert("RGB")
+    alto_foto = 640
+    r = max(TW / f0.width, alto_foto / f0.height)
+    f0 = f0.resize((int(f0.width * r + 0.5), int(f0.height * r + 0.5)), Image.LANCZOS)
+    x, y = (f0.width - TW) // 2, (f0.height - alto_foto) // 2
+    img.paste(f0.crop((x, y, x + TW, y + alto_foto)), (0, 0))
+    d = ImageDraw.Draw(img)
+    d.rectangle([0, 0, TW - 1, TH - 1], outline=MENTA, width=18)
+    fb = fuente(44)
+    l, t_, r_, b = d.textbbox((60, 60), f"#{numero:03d}", font=fb)
+    d.rounded_rectangle([l - 14, t_ - 8, r_ + 14, b + 8], radius=12, fill=MENTA)
+    d.text((60, 60), f"#{numero:03d}", font=fb, fill=NOCHE)
+    d.text((70, alto_foto + 40), f"DID YOU KNOW? · {categoria}", font=fuente(34), fill=MENTA)
+    tam = 64
+    while True:
+        f = fuente(tam)
+        lineas = envolver(dato, f, TW - 140, d)
+        if len(lineas) * tam * 1.25 <= TH - alto_foto - 230 or tam <= 38:
+            break
+        tam -= 4
+    yy = alto_foto + 110
+    for linea in lineas:
+        d.text((70, yy), linea, font=f, fill=(255, 255, 255))
+        yy += int(tam * 1.25)
+    marca = "DAILY FACT DROP"
+    fm = fuente(32)
+    d.text((TW - 70 - d.textlength(marca, font=fm), TH - 95), marca, font=fm, fill=MENTA)
+    ruta = SAL / "foto_post.jpg"
+    img.save(ruta, quality=93)
+    return ruta
 
 
 def main():
@@ -609,6 +674,10 @@ def main():
             tags += " " + t
     (SAL / "descripcion.txt").write_text(
         f"{g['titulo']}\n\n{g.get('descripcion', '')}\n\nImages: Wikimedia Commons\n\n{tags.strip()}\n", encoding="utf-8")
+    dato = elegir_dato_corto(g)
+    hacer_tarjeta(fotos[1] if len(fotos) > 1 else fotos[0], dato, numero, categoria)
+    preg = next((f for f in reversed(_frases(g["narracion"])) if f.endswith("?")), "")
+    (SAL / "foto_post.txt").write_text(f"{dato}\n\n{preg}\n\n{tags.strip()}\n".replace("\n\n\n\n", "\n\n"), encoding="utf-8")
     nota = ("\n\nREVISAR ANTES DE PUBLICAR: " + "; ".join(map(str, revisar))) if revisar else ""
     (SAL / "guion.txt").write_text(
         f"{SERIE} #{numero:03d}\nFuente (solo para ti, no va en el post): {art['titulo']} — {art['url']}\n\n"
