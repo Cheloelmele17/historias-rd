@@ -5,3 +5,4 @@
 2026-11-14 | #004 | SPACE | International Space Station | B
 2026-11-14 | #005 | INVENTIONS | Post-it note | B
 2026-11-14 | #006 | ECONOMICS | Euronext Amsterdam | B
+2026-11-15 | #007 | SCIENCE | Velcro | A
