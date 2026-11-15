@@ -149,7 +149,9 @@ def escoger_tema(categoria, usados):
                f"Do not use any of these: {lista}.\n"
                '{"titulos": ["...", "..."]}')
     propuesta, _ = preguntar(sistema, usuario, temperatura=1.0)
-    titulos = [t for t in propuesta.get("titulos", []) if isinstance(t, str)]
+    lista_t = propuesta.get("titulos") or next((v for v in propuesta.values() if isinstance(v, list)), [])
+    titulos = [t for t in lista_t if isinstance(t, str)]
+    print(f"  propuestas: {titulos}", flush=True)
     random.shuffle(titulos)
     for t in titulos:
         try:
