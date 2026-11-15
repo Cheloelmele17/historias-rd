@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-# Video de curiosidades con estilo "menta y noche", basado SOLO en artículos reales de Wikipedia.
-#   tema y datos -> Wikipedia en español (la IA solo explica lo que dice el artículo)
+# Video de datos curiosos EN INGLÉS (público de EE. UU.) con estilo "menta y noche", basado SOLO en Wikipedia.
+#   tema y datos -> Wikipedia en inglés (la IA solo explica lo que dice el artículo)
 #   guion        -> Groq (clave GROQ_API_KEY) o Gemini (GEMINI_API_KEY), con verificación contra el artículo
 #   fotos        -> fotos reales de Wikimedia Commons
 #   voz          -> edge-tts
@@ -15,7 +15,7 @@ from PIL import Image, ImageDraw, ImageFilter, ImageFont, ImageOps
 USUARIO = os.environ.get("USUARIO_TIKTOK", "")        # ej. "@datodiario" (vacío = no se muestra)
 MENTA = (46, 242, 194)                                   # #2EF2C2
 NOCHE = (20, 17, 43)                                     # #14112B
-SERIE = "DATO"
+SERIE = "FACT"
 # ===========================================
 
 RAIZ = pathlib.Path(__file__).resolve().parent
@@ -24,10 +24,11 @@ TMP = SAL / "tmp"
 W, H, FPS = 1080, 1920, 30
 S = W / 720                     # escala del diseño (se diseñó en 720x1280)
 PORTADA_SEG, CIERRE_SEG = 1.3, 2.2
-VOCES = [os.environ.get("VOZ", "es-MX-JorgeNeural"), "es-US-AlonsoNeural", "es-DO-EmilioNeural"]
+VOCES = [os.environ.get("VOZ", "en-US-AndrewNeural"), "en-US-ChristopherNeural", "en-US-GuyNeural"]
 UA = "DatoDiarioBot/1.0 (https://github.com/Cheloelmele17/historias-rd)"
-CATEGORIAS = ["LUGARES DEL MUNDO", "ANIMALES", "TECNOLOGÍA", "ESPACIO", "CUERPO HUMANO", "HISTORIA", "NATURALEZA",
-              "INVENTOS", "CIUDADES", "CIENCIA", "COMIDA DEL MUNDO", "MISTERIOS DE LA NATURALEZA"]
+# Temas que mejor pagan en publicidad: tecnología, dinero, empresas, ciencia
+CATEGORIAS = ["TECHNOLOGY", "MONEY HISTORY", "FAMOUS COMPANIES", "SPACE", "INVENTIONS", "ECONOMICS",
+              "SCIENCE", "ENGINEERING", "HUMAN BODY", "BUSINESS LEGENDS"]
 PRUEBA = "--prueba-local" in sys.argv
 
 
@@ -131,20 +132,21 @@ def preguntar(sistema, usuario, temperatura=0.7):
 def wiki_articulo(titulo):
     q = urllib.parse.urlencode({"action": "query", "prop": "extracts|info", "explaintext": 1, "redirects": 1,
                                 "inprop": "url", "titles": titulo, "format": "json", "formatversion": 2})
-    p = bajar_json(f"https://es.wikipedia.org/w/api.php?{q}")["query"]["pages"][0]
+    p = bajar_json(f"https://en.wikipedia.org/w/api.php?{q}")["query"]["pages"][0]
     if p.get("missing") or not p.get("extract"):
         return None
-    texto = re.split(r"\n== (Véase también|Referencias|Bibliografía|Enlaces externos|Notas) ==", p["extract"])[0]
+    texto = re.split(r"\n== (See also|References|Notes|Further reading|External links|Bibliography|Sources|Citations) ==", p["extract"])[0]
     return {"titulo": p["title"], "url": p.get("fullurl", ""), "texto": texto.strip()}
 
 
 def escoger_tema(categoria, usados):
-    sistema = ("Eres editor de un canal de curiosidades. Propones artículos de Wikipedia en español que tengan "
-               "datos sorprendentes y verificables, interesantes para público latino. Responde solo JSON.")
-    lista = ", ".join(usados[-120:]) or "ninguno"
-    usuario = (f"Categoría: {categoria}. Dame 8 títulos EXACTOS de artículos existentes en es.wikipedia.org "
-               f"(temas CONCRETOS y específicos: un lago, un animal, un edificio, un invento, una costumbre, un fenómeno; NO países completos ni temas generales, no personas vivas ni temas políticos). "
-               f"No uses ninguno de estos: {lista}.\n"
+    sistema = ("You are the editor of a short-video channel of surprising facts for a US audience. You propose English "
+               "Wikipedia articles full of surprising, verifiable facts. Reply only with JSON.")
+    lista = ", ".join(usados[-120:]) or "none"
+    usuario = (f"Category: {categoria}. Give me 8 EXACT titles of existing articles on en.wikipedia.org "
+               f"(CONCRETE, specific topics: one invention, one company, one coin or banknote, one market crash, one machine, one spacecraft, "
+               f"one discovery; NOT whole countries or broad topics, no living people, no politics, nothing about what to invest in). "
+               f"Do not use any of these: {lista}.\n"
                '{"titulos": ["...", "..."]}')
     propuesta, _ = preguntar(sistema, usuario, temperatura=1.0)
     titulos = [t for t in propuesta.get("titulos", []) if isinstance(t, str)]
@@ -167,37 +169,38 @@ def escoger_tema(categoria, usados):
 
 
 # ---------- 4. Guion basado en el artículo ----------
-SISTEMA_GUION = """Eres guionista de un canal de TikTok de curiosidades para público dominicano y latino.
-Te doy el texto de un artículo de Wikipedia. Escribe el guion USANDO SOLO información que está en ese texto.
-Prohibido agregar datos, cifras, récords, comparaciones o lugares que no aparezcan en el artículo. No mezcles otros países ni otros temas.
-Elige lo más sorprendente del artículo.
-NARRACIÓN: entre 175 y 200 palabras (más de un minuto). Cuéntalo como se lo contarías a un amigo: usa "tú", frases de máximo 15 palabras,
-preguntas retóricas y expresiones naturales ("imagínate", "y aquí viene lo bueno", "lo más loco es que..."). Español neutro con calidez caribeña.
-No uses nombres científicos en latín ni listas largas de cosas; escoge lo más impresionante y explícalo bien.
-Escribe las unidades y símbolos en palabras ("kilómetros por hora", "grados", "por ciento"), nunca abreviados, y las cifras grandes redondeadas en palabras ("más de tres millones").
-1) Primera frase: gancho fuerte de máximo 12 palabras.
-2) 2 o 3 datos interesantes del artículo, con el porqué.
-3) La ÚLTIMA frase debe ser una pregunta para que comenten; no pongas nada después. NO pidas que te sigan.
-PORTADA: titular de 3 a 6 palabras, y "resaltar": 1 o 2 palabras tal cual aparecen en el titular.
-BUSQUEDAS: 3 frases cortas en INGLÉS para buscar fotos reales del tema (ej. "Lake Baikal winter ice").
-Todo en español salvo las búsquedas.
-Responde SOLO JSON: {"titulo": "...", "portada": "...", "resaltar": "...", "narracion": "...", "descripcion": "una línea para el post", "hashtags": ["#curiosidades", "..."], "busquedas": ["...", "...", "..."]}"""
+SISTEMA_GUION = """You write scripts for a TikTok/Facebook Reels channel of surprising facts for an American audience.
+I give you the text of a Wikipedia article. Write the script USING ONLY information that is in that text.
+Never add facts, numbers, records, comparisons or places that are not in the article. Do not mix in other topics.
+Pick the most surprising things in the article.
+NARRATION: 170 to 195 words (a bit over one minute). Tell it like you would tell a friend: talk to "you", sentences of 15 words max,
+rhetorical questions and natural spoken expressions ("picture this", "here's the crazy part", "and it gets weirder"). Casual American English.
+No Latin scientific names, no long lists; choose the most impressive facts and explain why they matter.
+Write units and symbols as words ("miles per hour", "degrees", "percent"), never abbreviated; round big numbers in words ("over three million").
+No investment or financial advice, only facts and history.
+1) First sentence: a strong hook of 12 words max.
+2) 2 or 3 interesting facts from the article, with the why.
+3) The LAST sentence must be a question so people comment; nothing after it. Do NOT ask people to follow.
+COVER ("portada"): headline of 3 to 6 words, and "resaltar": 1 or 2 words exactly as they appear in the headline.
+BUSQUEDAS: 3 short English phrases to search real photos of the topic (e.g. "Lake Baikal winter ice").
+TRADUCCION_ES: a Spanish translation of the narration (only for the channel owner, it is not published).
+Reply ONLY JSON: {"titulo": "...", "portada": "...", "resaltar": "...", "narracion": "...", "descripcion": "one line for the post", "hashtags": ["#facts", "..."], "busquedas": ["...", "...", "..."], "traduccion_es": "..."}"""
 
-SISTEMA_VERIFICAR = """Eres verificador de datos muy estricto. Te doy un ARTÍCULO de Wikipedia y un GUION.
-Revisa cada afirmación del guion: debe estar respaldada por el artículo. Lo que no esté en el artículo, o lo contradiga, es un problema.
-Si hay problemas, corrige SOLO las frases con problemas y deja todo lo demás igual: mismo tono de conversación con "tú", mismo gancho inicial,
-misma pregunta final para comentar (que debe ser SIEMPRE la última frase, nada después), entre 175 y 200 palabras. No lo conviertas en texto de enciclopedia ni en una lista. Corrige titulo/portada/resaltar si hace falta.
-Responde SOLO JSON: {"ok": true o false, "problemas": ["..."], "titulo": "...", "portada": "...", "resaltar": "...", "narracion": "..."}"""
+SISTEMA_VERIFICAR = """You are a very strict fact-checker. I give you a Wikipedia ARTICLE and a SCRIPT.
+Check every claim in the script: it must be supported by the article. Anything not in the article, or contradicting it, is a problem.
+If there are problems, fix ONLY the sentences with problems and keep everything else the same: same friendly "you" tone, same opening hook,
+same final question for comments (it must ALWAYS be the last sentence, nothing after it), 170 to 195 words. Do not turn it into an encyclopedia text or a list. Fix titulo/portada/resaltar if needed.
+Reply ONLY JSON: {"ok": true or false, "problemas": ["..."], "titulo": "...", "portada": "...", "resaltar": "...", "narracion": "..."}"""
 
 
 def escribir_guion(art, extra=""):
-    usuario = f"ARTÍCULO: {art['titulo']}\n\n{art['texto'][:6000]}\n\n{extra}"
+    usuario = f"ARTICLE: {art['titulo']}\n\n{art['texto'][:6000]}\n\n{extra}"
     g, quien = preguntar(SISTEMA_GUION, usuario)
     if len(str(g.get("narracion", "")).split()) < 140 or not g.get("portada"):
         raise SystemExit(f"Guion incompleto de {quien}")
     print(f"Guion ({quien}): {g['titulo']} ({len(g['narracion'].split())} palabras)")
     for ronda in range(2):
-        v, quien = preguntar(SISTEMA_VERIFICAR, f"ARTÍCULO:\n{art['texto'][:6000]}\n\nGUION:\n"
+        v, quien = preguntar(SISTEMA_VERIFICAR, f"ARTICLE:\n{art['texto'][:6000]}\n\nSCRIPT:\n"
                              + json.dumps({k: g.get(k) for k in ("titulo", "portada", "resaltar", "narracion")},
                                           ensure_ascii=False), temperatura=0.2)
         if v.get("ok") is True or not v.get("problemas"):
@@ -239,13 +242,6 @@ def _imagenes_articulo(lang, titulo):
     return _filtrar(bajar_json(f"https://{lang}.wikipedia.org/w/api.php?{q}").get("query", {}).get("pages", []))
 
 
-def _titulo_ingles(titulo):
-    q = urllib.parse.urlencode({"action": "query", "prop": "langlinks", "lllang": "en", "titles": titulo,
-                                "redirects": 1, "format": "json", "formatversion": 2})
-    p = bajar_json(f"https://es.wikipedia.org/w/api.php?{q}")["query"]["pages"][0]
-    return (p.get("langlinks") or [{}])[0].get("title")
-
-
 def _commons(busqueda, limite=12):
     q = urllib.parse.urlencode({"action": "query", "generator": "search", "gsrnamespace": 6, "gsrsearch": busqueda,
                                 "gsrlimit": limite, **IIPROP})
@@ -253,10 +249,9 @@ def _commons(busqueda, limite=12):
 
 
 def fotos_commons(titulo, busquedas=(), solo_contar=False):
-    """Primero las fotos del propio artículo (español e inglés), que siempre son del tema; luego búsquedas."""
+    """Primero las fotos del propio artículo en inglés, que siempre son del tema; luego búsquedas en Commons."""
     vistas, fotos = set(), []
-    fuentes = [lambda: _imagenes_articulo("es", titulo)]
-    fuentes.append(lambda: (lambda en: _imagenes_articulo("en", en) if en else [])(_titulo_ingles(titulo)))
+    fuentes = [lambda: _imagenes_articulo("en", titulo)]
     if not solo_contar:
         fuentes += [lambda b=b: _commons(f"{b}") for b in busquedas]
     for fuente in fuentes:
@@ -281,7 +276,7 @@ def bajar_fotos(fotos, cuantas=6):
             ruta = TMP / f"foto{len(rutas)}.jpg"
             img.save(ruta, quality=94)
             rutas.append(ruta)
-            creditos.append(f"{f['titulo']} — {f['autor'] or 'autor en Commons'} ({f['licencia']})")
+            creditos.append(f"{f['titulo']} — {f['autor'] or 'Commons author'} ({f['licencia']})")
         except Exception as e:
             print(f"  foto falló: {e}")
     print(f"{len(rutas)} fotos reales listas")
@@ -380,14 +375,14 @@ def hacer_portada(foto, numero, titular, resaltar, categoria):
     for linea in lineas:
         x = s(55)
         for palabra in linea.split():
-            limpia = re.sub(r"[^\wÁÉÍÓÚÑÜ]", "", palabra)
+            limpia = re.sub(r"[^\wÁÉÍÓÚÑÜ']", "", palabra)
             if limpia and limpia in claves:
                 x = placa(d, (x + s(8), y), palabra, f, pad=(8, 2)) + s(10)
             else:
                 d.text((x, y), palabra, font=f, fill=(255, 255, 255), stroke_width=s(2), stroke_fill=NOCHE)
                 x += d.textlength(palabra + " ", font=f)
         y += alto_linea
-    d.text((s(55), s(1035)), f"CURIOSIDADES · {categoria}", font=fuente(s(28)), fill=MENTA)
+    d.text((s(55), s(1035)), f"DID YOU KNOW? · {categoria}", font=fuente(s(28)), fill=MENTA)
     ruta = TMP / "portada.png"
     img.convert("RGB").save(ruta)
     return ruta
@@ -409,7 +404,7 @@ def hacer_cierre(foto, numero):
     d = ImageDraw.Draw(img)
     marco(d, 18)
     f1, f2 = fuente(s(64)), fuente(s(96))
-    t1 = "SÍGUEME PARA EL"
+    t1 = "FOLLOW FOR"
     d.text(((W - d.textlength(t1, font=f1)) / 2, s(470)), t1, font=f1, fill=(255, 255, 255))
     t2 = f"{SERIE} #{numero + 1:03d}"
     placa(d, ((W - d.textlength(t2, font=f2)) / 2, s(560)), t2, f2, pad=(18, 8))
@@ -423,24 +418,24 @@ def hacer_cierre(foto, numero):
 
 # ---------- 7. Voz ----------
 UNIDADES = [
-    (r"(\d)\s*k(?:m|lm)\s*/\s*h\b", r"\1 kilómetros por hora"), (r"\bk(?:m|lm)\s*/\s*h\b", "kilómetros por hora"),
-    (r"(\d)\s*kWh\s*/\s*m²", r"\1 kilovatios hora por metro cuadrado"), (r"(\d)\s*kWh\b", r"\1 kilovatios hora"),
-    (r"(\d)\s*km\s*/\s*s\b", r"\1 kilómetros por segundo"), (r"(\d)\s*m\s*/\s*s\b", r"\1 metros por segundo"),
-    (r"(\d)\s*km²", r"\1 kilómetros cuadrados"), (r"(\d)\s*m²", r"\1 metros cuadrados"), (r"(\d)\s*m³", r"\1 metros cúbicos"),
-    (r"(\d)\s*k(?:m|lm)\b", r"\1 kilómetros"), (r"(\d)\s*kg\b", r"\1 kilos"), (r"(\d)\s*cm\b", r"\1 centímetros"),
-    (r"(\d)\s*mm\b", r"\1 milímetros"), (r"(\d)\s*m\b", r"\1 metros"), (r"(\d)\s*g\b", r"\1 gramos"),
-    (r"(\d)\s*mph\b", r"\1 millas por hora"), (r"(\d)\s*°\s*[CF]\b", r"\1 grados"), (r"(\d)\s*°", r"\1 grados"),
-    (r"(\d)\s*%", r"\1 por ciento"), (r"\ba\.\s?C\.", "antes de Cristo"), (r"\bd\.\s?C\.", "después de Cristo"),
-    (r"\baprox\.", "aproximadamente"), (r"\bkm\b", "kilómetros"),
+    (r"(\d)\s*km\s*/\s*h\b", r"\1 kilometers per hour"), (r"\bkm\s*/\s*h\b", "kilometers per hour"),
+    (r"(\d)\s*kWh\b", r"\1 kilowatt hours"), (r"(\d)\s*km\s*/\s*s\b", r"\1 kilometers per second"),
+    (r"(\d)\s*m\s*/\s*s\b", r"\1 meters per second"), (r"(\d)\s*km²", r"\1 square kilometers"),
+    (r"(\d)\s*sq\s*mi\b", r"\1 square miles"), (r"(\d)\s*m²", r"\1 square meters"),
+    (r"(\d)\s*km\b", r"\1 kilometers"), (r"(\d)\s*kg\b", r"\1 kilograms"), (r"(\d)\s*lbs?\b", r"\1 pounds"),
+    (r"(\d)\s*cm\b", r"\1 centimeters"), (r"(\d)\s*mm\b", r"\1 millimeters"), (r"(\d)\s*ft\b", r"\1 feet"),
+    (r"(\d)\s*mi\b", r"\1 miles"), (r"(\d)\s*mph\b", r"\1 miles per hour"), (r"(\d)\s*°\s*F\b", r"\1 degrees Fahrenheit"),
+    (r"(\d)\s*°\s*C\b", r"\1 degrees Celsius"), (r"(\d)\s*°", r"\1 degrees"), (r"(\d)\s*%", r"\1 percent"),
+    (r"\bapprox\.", "approximately"), (r"\be\.g\.", "for example"), (r"\bi\.e\.", "that is"),
 ]
 
 
 def para_hablar(texto):
     """Convierte abreviaturas y números raros en palabras para que la voz no lea letra por letra."""
     t = texto
-    for _ in range(3):  # 3 600 000 -> 3600000
-        t = re.sub(r"(\d)[ \u00a0\u202f.](?=\d{3}(?!\d))", r"\1", t)
-    t = re.sub(r"(?<![\w-])-(\d)", r"menos \1", t)
+    for _ in range(3):  # 3 600 000 -> 3600000 (en inglés el punto es decimal, no se toca)
+        t = re.sub(r"(\d)[ \u00a0\u202f](?=\d{3}(?!\d))", r"\1", t)
+    t = re.sub(r"(?<![\w-])-(\d)", r"minus \1", t)
     for patron, cambio in UNIDADES:
         t = re.sub(patron, cambio, t)
     t = t.replace("‑", "-").replace("–", ", ").replace("—", ", ")
@@ -464,7 +459,7 @@ async def _narrar(texto, voz, mp3, rate):
     return palabras
 
 
-def narrar(texto, rate="+2%"):
+def narrar(texto, rate="+0%"):
     mp3 = TMP / "voz.mp3"
     for voz in VOCES:
         try:
@@ -570,8 +565,8 @@ def main():
     if PRUEBA:
         art = {"titulo": "Prueba", "url": ""}
         g = {"titulo": "Prueba", "portada": "Este lago guarda un secreto", "resaltar": "secreto",
-             "descripcion": "Prueba", "hashtags": ["#curiosidades"],
-             "narracion": ("¿Sabías que este lago es más antiguo de lo que imaginas? " * 14).strip()}
+             "descripcion": "Prueba", "hashtags": ["#facts"],
+             "narracion": ("Did you know this lake is way older than you think? " * 14).strip()}
         revisar, creditos = [], []
         fotos = [imagen_de_relleno(i) for i in range(5)]
         mp3 = TMP / "voz.mp3"
@@ -583,12 +578,12 @@ def main():
         print(f"{SERIE} #{numero:03d} · categoría: {categoria}", flush=True)
         art = escoger_tema(categoria, usados)
         g, revisar = escribir_guion(art)
-        cierre_hablado = f" Sígueme para el {SERIE.lower()} número {numero + 1}."
+        cierre_hablado = f" Follow for {SERIE.lower()} number {numero + 1}."
         hablado = para_hablar(g["narracion"]) + cierre_hablado
         mp3, palabras = narrar(hablado)
         if duracion(mp3) + CIERRE_SEG < 61.5:
             print("Quedó corto, se narra más despacio")
-            mp3, palabras = narrar(hablado, rate="-6%")
+            mp3, palabras = narrar(hablado, rate="-8%")
         if duracion(mp3) + CIERRE_SEG < 61.5:
             raise SystemExit("La narración no llega al minuto; hoy no se hace video")
         fotos, creditos = bajar_fotos(fotos_commons(art["titulo"], g.get("busquedas", [])))
@@ -605,15 +600,15 @@ def main():
 
     Image.open(portada).convert("RGB").save(SAL / "portada.jpg", quality=92)
     tags = " ".join(h if h.startswith("#") else "#" + h for h in g.get("hashtags", []))
-    for t in ["#curiosidades", "#sabiasque", "#datocurioso"]:
+    for t in ["#facts", "#didyouknow", "#funfacts"]:
         if t not in tags:
             tags += " " + t
     (SAL / "descripcion.txt").write_text(
-        f"{g['titulo']}\n\n{g.get('descripcion', '')}\n\nImágenes: Wikimedia Commons\n\n{tags.strip()}\n", encoding="utf-8")
+        f"{g['titulo']}\n\n{g.get('descripcion', '')}\n\nImages: Wikimedia Commons\n\n{tags.strip()}\n", encoding="utf-8")
     nota = ("\n\nREVISAR ANTES DE PUBLICAR: " + "; ".join(map(str, revisar))) if revisar else ""
     (SAL / "guion.txt").write_text(
         f"{SERIE} #{numero:03d}\nFuente (solo para ti, no va en el post): {art['titulo']} — {art['url']}\n\n"
-        f"{g['narracion']}{nota}\n\nCréditos de las fotos:\n" + "\n".join(creditos) + "\n", encoding="utf-8")
+        f"{g['narracion']}{nota}\n\nEN ESPAÑOL (solo para ti):\n{g.get('traduccion_es', '')}\n\nCréditos de las fotos:\n" + "\n".join(creditos) + "\n", encoding="utf-8")
     if not PRUEBA:
         with open(RAIZ / "registro.txt", "a", encoding="utf-8") as fh:
             fh.write(f"{hoy} | #{numero:03d} | {categoria} | {art['titulo']} | {os.environ.get('TURNO', 'M')}\n")
