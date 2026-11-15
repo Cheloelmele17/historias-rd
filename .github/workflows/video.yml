@@ -135,9 +135,9 @@ jobs:
               raise SystemExit(f"Facebook rechazó el video: {estado}")
           print("Reel publicado en Daily Fact Drop")
           PY
-      - name: Publicar foto en Facebook (1 al día, con el video de la mañana)
+      - name: Publicar foto en Facebook (con cada video)
         id: fbfoto
-        if: steps.toca.outputs.si == 'true' && (steps.toca.outputs.turno == 'A' || (github.event_name == 'workflow_dispatch' && inputs.programado != 'si'))
+        if: steps.toca.outputs.si == 'true'
         continue-on-error: true
         env:
           FB_PAGE_TOKEN: ${{ secrets.FB_PAGE_TOKEN }}
@@ -163,6 +163,54 @@ jobs:
           except urllib.error.HTTPError as e:
               raise SystemExit(f"Facebook dio error {e.code}: {e.read()[:600]!r}")
           PY
+      - name: Publicar historias en Facebook (foto y video)
+        id: fbhist
+        if: steps.toca.outputs.si == 'true'
+        continue-on-error: true
+        env:
+          FB_PAGE_TOKEN: ${{ secrets.FB_PAGE_TOKEN }}
+          FB_PAGE_ID: "1469691522893283"
+        run: |
+          [ -n "$FB_PAGE_TOKEN" ] || { echo "sin clave de Facebook"; exit 0; }
+          python3 - <<'PY'
+          import json, os, pathlib, urllib.error, urllib.parse, urllib.request, uuid
+          tok, page = os.environ["FB_PAGE_TOKEN"], os.environ["FB_PAGE_ID"]
+          api = "https://graph.facebook.com/v21.0"
+          def llamar(url, data=None, body=None, headers=None):
+              if data is not None:
+                  body = urllib.parse.urlencode(data).encode()
+              req = urllib.request.Request(url, data=body, headers=headers or {}, method="POST")
+              try:
+                  with urllib.request.urlopen(req, timeout=300) as r:
+                      return json.loads(r.read())
+              except urllib.error.HTTPError as e:
+                  raise RuntimeError(f"Facebook dio error {e.code}: {e.read()[:500]!r}")
+          fallos = []
+          # 1) Historia con la foto del dato
+          try:
+              foto = pathlib.Path("salida/foto_post.jpg").read_bytes()
+              b = uuid.uuid4().hex
+              cuerpo = (f'--{b}\r\nContent-Disposition: form-data; name="published"\r\n\r\nfalse\r\n'
+                        f'--{b}\r\nContent-Disposition: form-data; name="access_token"\r\n\r\n{tok}\r\n'
+                        f'--{b}\r\nContent-Disposition: form-data; name="source"; filename="dato.jpg"\r\nContent-Type: image/jpeg\r\n\r\n').encode() + foto + f"\r\n--{b}--\r\n".encode()
+              pid = llamar(f"{api}/{page}/photos", body=cuerpo, headers={"Content-Type": f"multipart/form-data; boundary={b}"})["id"]
+              print("Historia de foto:", llamar(f"{api}/{page}/photo_stories", {"photo_id": pid, "access_token": tok}))
+          except Exception as e:
+              fallos.append(f"foto: {e}")
+          # 2) Historia con el video
+          try:
+              video = pathlib.Path("salida/video.mp4").read_bytes()
+              ini = llamar(f"{api}/{page}/video_stories", {"upload_phase": "start", "access_token": tok})
+              vid = ini["video_id"]
+              llamar(ini.get("upload_url") or f"https://rupload.facebook.com/video-upload/v21.0/{vid}", body=video,
+                     headers={"Authorization": f"OAuth {tok}", "offset": "0", "file_size": str(len(video))})
+              print("Historia de video:", llamar(f"{api}/{page}/video_stories", {"upload_phase": "finish", "video_id": vid, "access_token": tok}))
+          except Exception as e:
+              fallos.append(f"video: {e}")
+          if fallos:
+              raise SystemExit("No salió: " + " | ".join(fallos))
+          print("Historias publicadas en Daily Fact Drop")
+          PY
       - name: Avisar al celular (ntfy)
         if: always() && steps.toca.outputs.si == 'true'
         env:
@@ -170,6 +218,7 @@ jobs:
           ESTADO: ${{ job.status }}
           FB: ${{ steps.fb.outcome }}
           FBFOTO: ${{ steps.fbfoto.outcome }}
+          FBHIST: ${{ steps.fbhist.outcome }}
         run: |
           [ -n "$NTFY_TOPIC" ] || exit 0
           python3 - <<'PY'
@@ -179,6 +228,7 @@ jobs:
           if os.environ["ESTADO"] == "success" and desc.exists():
               fb = {"success": "\n\n✅ Ya se publicó solo en Facebook.", "failure": "\n\n⚠️ No se pudo publicar en Facebook."}.get(os.environ.get("FB", ""), "")
               fb += {"success": "\n📷 También se publicó la foto del día.", "failure": "\n⚠️ La foto del día no se pudo publicar."}.get(os.environ.get("FBFOTO", ""), "")
+              fb += {"success": "\n📖 Y las historias (foto y video).", "failure": "\n⚠️ Alguna historia no se pudo publicar."}.get(os.environ.get("FBHIST", ""), "")
               msg = {"title": "Video listo para TikTok", "message": desc.read_text(encoding="utf-8")[:3400] + fb,
                      "click": base + "/download/ultimo/video.mp4", "attach": base + "/download/ultimo/portada.jpg",
                      "actions": [{"action": "view", "label": "Descargar video", "url": base + "/download/ultimo/video.mp4"}],
