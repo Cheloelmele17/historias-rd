@@ -10,3 +10,4 @@
 2026-11-15 | #009 | HUMAN BODY | Electrocardiography | B
 2026-11-16 | #010 | BUSINESS LEGENDS | Tulip mania | A
 2026-11-16 | #011 | TECHNOLOGY | World Wide Web | B
+2026-11-17 | #012 | MONEY HISTORY | Comstock Lode | A
