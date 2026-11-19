@@ -14,3 +14,4 @@
 2026-11-17 | #013 | FAMOUS COMPANIES | Tesla coil | B
 2026-11-18 | #014 | SPACE | Ion thruster | A
 2026-11-18 | #015 | INVENTIONS | SpaceX | B
+2026-11-19 | #016 | ECONOMICS | General Motors | A
