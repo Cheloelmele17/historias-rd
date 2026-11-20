@@ -16,3 +16,4 @@
 2026-11-18 | #015 | INVENTIONS | SpaceX | B
 2026-11-19 | #016 | ECONOMICS | General Motors | A
 2026-11-19 | #017 | SCIENCE | Geiger counter | B
+2026-11-20 | #018 | ENGINEERING | Lathe | A
