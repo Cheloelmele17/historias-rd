@@ -20,3 +20,4 @@
 2026-11-20 | #019 | HUMAN BODY | Stethoscope | B
 2026-11-21 | #020 | BUSINESS LEGENDS | Voyager 1 | A
 2026-11-21 | #021 | TECHNOLOGY | Intel | B
+2026-11-22 | #022 | MONEY HISTORY | 1804 dollar | A
