@@ -90,7 +90,19 @@ jobs:
         run: |
           git config user.name "robot-dato"
           git config user.email "robot-dato@users.noreply.github.com"
-          git add registro.txt
+          python3 - <<'PY'
+          import json, datetime, pathlib, re
+          reg = [l for l in pathlib.Path("registro.txt").read_text(encoding="utf-8").splitlines() if l.count("|") >= 4 and not l.startswith("#")]
+          p = [x.strip() for x in reg[-1].split("|")]
+          desc = pathlib.Path("salida/descripcion.txt").read_text(encoding="utf-8").strip()
+          ahora = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=-4)))
+          pathlib.Path("docs").mkdir(exist_ok=True)
+          pathlib.Path("docs/ultimo.json").write_text(json.dumps({
+              "numero": p[1].lstrip("#"), "categoria": p[2], "titulo": desc.splitlines()[0], "descripcion": desc,
+              "fecha": ahora.strftime("%d/%m/%Y %I:%M %p"), "version": ahora.strftime("%Y%m%d%H%M"),
+              "video": "https://github.com/Cheloelmele17/historias-rd/releases/download/ultimo/video.mp4"}, ensure_ascii=False, indent=1), encoding="utf-8")
+          PY
+          git add registro.txt docs/ultimo.json
           git commit -m "Dato del $(date -u +%Y-%m-%d)" || echo "sin cambios"
           git pull --rebase -q || true
           git push
