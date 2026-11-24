@@ -25,3 +25,4 @@
 2026-11-23 | #024 | SPACE | Kuiper belt | A
 2026-11-23 | #025 | INVENTIONS | Laser | B
 2026-11-24 | #026 | ECONOMICS | Drake Well | A
+2026-11-24 | #027 | SCIENCE | New Horizons | B
