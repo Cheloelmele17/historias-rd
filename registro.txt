@@ -24,3 +24,4 @@
 2026-11-22 | #023 | FAMOUS COMPANIES | Nike, Inc. | B
 2026-11-23 | #024 | SPACE | Kuiper belt | A
 2026-11-23 | #025 | INVENTIONS | Laser | B
+2026-11-24 | #026 | ECONOMICS | Drake Well | A
