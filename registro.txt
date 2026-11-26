@@ -28,3 +28,4 @@
 2026-11-24 | #027 | SCIENCE | New Horizons | B
 2026-11-25 | #028 | ENGINEERING | Cassini–Huygens | A
 2026-11-25 | #029 | HUMAN BODY | Magnetic resonance imaging | B
+2026-11-26 | #030 | BUSINESS LEGENDS | South Sea Company | A
