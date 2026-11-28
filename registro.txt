@@ -32,3 +32,4 @@
 2026-11-26 | #031 | TECHNOLOGY | Theremin | B
 2026-11-27 | #032 | MONEY HISTORY | Bank of England | A
 2026-11-27 | #033 | FAMOUS COMPANIES | The Coca-Cola Company | B
+2026-11-28 | #034 | SPACE | Hubble Space Telescope | A
